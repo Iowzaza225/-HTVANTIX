@@ -43,7 +43,18 @@ jobs:
 
       - name: Build unsigned IPA
         working-directory: work/HTVANTIX_Rebuild
-        run: ./Scripts/build_unsigned_ipa.sh
+        shell: bash
+        run: |
+          set +e
+          ./Scripts/build_unsigned_ipa.sh 2>&1 | tee build.log
+          STATUS=${PIPESTATUS[0]}
+
+          echo ""
+          echo "========== REAL XCODE ERRORS =========="
+          grep -nE ':[0-9]+:[0-9]+: (error|fatal error):' build.log || true
+          echo "======================================="
+
+          exit $STATUS
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
