@@ -3,7 +3,8 @@ name: Build HTVANTIX IPA from ZIP
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
   build:
@@ -16,18 +17,23 @@ jobs:
       - name: Extract source package
         run: |
           rm -rf work
-          mkdir work
+          mkdir -p work
           unzip -q HTVANTIX_Rebuild_8.11_IPA_READY.zip -d work
           chmod +x work/HTVANTIX_Rebuild/Scripts/build_unsigned_ipa.sh
 
-      - name: Fix Combine import
+      - name: Fix iOS compile compatibility
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          p = Path("work/HTVANTIX_Rebuild/HTVANTIX/Services/NetworkSecurityMonitor.swift")
-          s = p.read_text()
+          p = Path(
+              "work/HTVANTIX_Rebuild/HTVANTIX/Services/"
+              "NetworkSecurityMonitor.swift"
+          )
 
+          s = p.read_text(encoding="utf-8")
+
+          # ObservableObject / @Published require Combine
           if "import Combine" not in s:
               s = s.replace(
                   "import Foundation\n",
@@ -35,17 +41,41 @@ jobs:
                   1
               )
 
-          p.write_text(s)
+          # CFNetwork HTTPS proxy constant is unavailable on iOS.
+          # Use the proxy dictionary string keys instead.
+          s = s.replace(
+              "settings[kCFNetworkProxiesHTTPEnable as String]",
+              'settings["HTTPEnable"]'
+          )
+
+          s = s.replace(
+              "settings[kCFNetworkProxiesHTTPSEnable as String]",
+              'settings["HTTPSEnable"]'
+          )
+
+          p.write_text(s, encoding="utf-8")
+
+          print("Patched:", p)
+          for number, line in enumerate(s.splitlines(), start=1):
+              if (
+                  "import Combine" in line
+                  or "HTTPEnable" in line
+                  or "HTTPSEnable" in line
+              ):
+                  print(f"{number}: {line}")
           PY
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
 
       - name: Build unsigned IPA
         working-directory: work/HTVANTIX_Rebuild
         shell: bash
         run: |
           set +e
+
           ./Scripts/build_unsigned_ipa.sh 2>&1 | tee build.log
           STATUS=${PIPESTATUS[0]}
 
@@ -56,7 +86,16 @@ jobs:
 
           exit $STATUS
 
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HTVANTIX-build-log
+          path: work/HTVANTIX_Rebuild/build.log
+          if-no-files-found: ignore
+
       - name: Upload IPA
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: HTVANTIX-8.11-unsigned-ipa
