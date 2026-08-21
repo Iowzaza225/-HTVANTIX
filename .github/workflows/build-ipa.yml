@@ -1,4 +1,4 @@
-name: Build HTVANTIX IPA
+name: Build HTVANTIX Cyber IPA
 
 on:
   workflow_dispatch:
@@ -14,12 +14,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract HTVANTIX source
+      - name: Verify source ZIP
+        shell: bash
         run: |
+          echo "===== REPOSITORY FILES ====="
+          ls -lah
+
+          SOURCE_ZIP="HTVANTIX_UI_CYBER_FINAL_V2_SOURCE.zip"
+
+          if [ ! -f "$SOURCE_ZIP" ]; then
+            echo "ERROR: Cannot find $SOURCE_ZIP"
+            exit 1
+          fi
+
+          echo "FOUND SOURCE:"
+          ls -lh "$SOURCE_ZIP"
+
+      - name: Extract Cyber source
+        shell: bash
+        run: |
+          set -e
+
+          SOURCE_ZIP="HTVANTIX_UI_CYBER_FINAL_V2_SOURCE.zip"
+
           rm -rf work
           mkdir -p work
-          unzip -q HTVANTIX_UI_CYBER_FINAL_V2_SOURCE.zip -d work
-          echo "===== PROJECT FILES ====="
+
+          unzip -q "$SOURCE_ZIP" -d work
+
+          echo "===== EXTRACTED SOURCE ====="
           find work -maxdepth 4 -type d -name "*.xcodeproj" -print
 
       - name: Select Xcode
@@ -27,32 +50,46 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
-      - name: Show schemes
+      - name: Detect project and scheme
+        shell: bash
         run: |
+          set -e
+
           PROJECT=$(find work -type d -name "*.xcodeproj" | head -1)
+
           if [ -z "$PROJECT" ]; then
-            echo "Xcode project not found"
+            echo "ERROR: Xcode project not found"
             exit 1
           fi
+
           echo "PROJECT=$PROJECT"
+
+          echo "===== XCODE PROJECT ====="
           xcodebuild -project "$PROJECT" -list
 
-      - name: Build HTVANTIX app
+      - name: Build HTVANTIX Cyber app
         shell: bash
         run: |
           set +e
+
           PROJECT=$(find work -type d -name "*.xcodeproj" | head -1)
 
           if [ -z "$PROJECT" ]; then
-            echo "Xcode project not found"
+            echo "ERROR: Xcode project not found"
             exit 1
           fi
 
-          SCHEME=$(xcodebuild -project "$PROJECT" -list -json | \
+          SCHEME=$(xcodebuild \
+            -project "$PROJECT" \
+            -list \
+            -json | \
             python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["project"]["schemes"][0])')
 
-          echo "PROJECT=$PROJECT"
-          echo "SCHEME=$SCHEME"
+          echo "================================"
+          echo "BUILDING CYBER SOURCE"
+          echo "PROJECT = $PROJECT"
+          echo "SCHEME  = $SCHEME"
+          echo "================================"
 
           rm -rf build
 
@@ -81,31 +118,46 @@ jobs:
         if: success()
         shell: bash
         run: |
+          set -e
+
           APP=$(find build/DerivedData/Build/Products/Release-iphoneos \
-            -maxdepth 1 -type d -name "*.app" | head -1)
+            -maxdepth 1 \
+            -type d \
+            -name "*.app" \
+            | head -1)
 
           if [ -z "$APP" ]; then
-            echo "Built .app not found"
+            echo "ERROR: Built .app not found"
             exit 1
           fi
 
+          echo "FOUND APP:"
+          echo "$APP"
+
           rm -rf Payload
-          mkdir Payload
+          mkdir -p Payload
+
           cp -R "$APP" Payload/
-          zip -qry HTVANTIX_unsigned.ipa Payload
+
+          rm -f HTVANTIX_CYBER_unsigned.ipa
+          zip -qry HTVANTIX_CYBER_unsigned.ipa Payload
+
+          echo ""
+          echo "===== IPA CREATED ====="
+          ls -lh HTVANTIX_CYBER_unsigned.ipa
 
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-build-log
+          name: HTVANTIX-CYBER-build-log
           path: build.log
           if-no-files-found: ignore
 
-      - name: Upload IPA
+      - name: Upload Cyber IPA
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-unsigned-ipa
-          path: HTVANTIX_unsigned.ipa
+          name: HTVANTIX-CYBER-IPA
+          path: HTVANTIX_CYBER_unsigned.ipa
           if-no-files-found: error
