@@ -18,8 +18,7 @@ jobs:
         run: |
           rm -rf work
           mkdir -p work
-          unzip -q HTVANTIX_READY_API_PATCH_FINAL_SOURCE_FIX2B.zip -d work
-
+          unzip -q HTVANTIX_UI_CYBER_FINAL_V2_SOURCE.zip -d work
           echo "===== PROJECT FILES ====="
           find work -maxdepth 4 -type d -name "*.xcodeproj" -print
 
@@ -31,12 +30,10 @@ jobs:
       - name: Show schemes
         run: |
           PROJECT=$(find work -type d -name "*.xcodeproj" | head -1)
-
           if [ -z "$PROJECT" ]; then
             echo "Xcode project not found"
             exit 1
           fi
-
           echo "PROJECT=$PROJECT"
           xcodebuild -project "$PROJECT" -list
 
@@ -44,7 +41,6 @@ jobs:
         shell: bash
         run: |
           set +e
-
           PROJECT=$(find work -type d -name "*.xcodeproj" | head -1)
 
           if [ -z "$PROJECT" ]; then
@@ -93,15 +89,10 @@ jobs:
             exit 1
           fi
 
-          echo "APP=$APP"
-
           rm -rf Payload
           mkdir Payload
           cp -R "$APP" Payload/
-
           zip -qry HTVANTIX_unsigned.ipa Payload
-
-          ls -lh HTVANTIX_unsigned.ipa
 
       - name: Upload build log on failure
         if: failure()
