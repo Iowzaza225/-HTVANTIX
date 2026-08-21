@@ -1,4 +1,4 @@
-name: Build HTVANTIX Premium IPA
+name: Build HTVANTIX Final IPA
 
 on:
   workflow_dispatch:
@@ -14,10 +14,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify source ZIP
+      - name: Verify source
         shell: bash
         run: |
-          SOURCE_ZIP="HTVANTIX_PREMIUM_BLACK_API_FIX1_SOURCE.zip"
+          SOURCE_ZIP="HTVANTIX_PREMIUM_OLD_API_FINAL_SOURCE.zip"
 
           if [ ! -f "$SOURCE_ZIP" ]; then
             echo "ERROR: Missing $SOURCE_ZIP"
@@ -35,10 +35,37 @@ jobs:
           rm -rf work
           mkdir -p work
 
-          unzip -q HTVANTIX_PREMIUM_BLACK_API_FIX1_SOURCE.zip -d work
+          unzip -q HTVANTIX_PREMIUM_OLD_API_FINAL_SOURCE.zip -d work
 
           echo "===== XCODE PROJECT ====="
           find work -maxdepth 4 -type d -name "*.xcodeproj" -print
+
+      - name: Inject app token
+        shell: bash
+        env:
+          HTVANTIX_APP_TOKEN: ${{ secrets.HTVANTIX_APP_TOKEN }}
+        run: |
+          if [ -z "$HTVANTIX_APP_TOKEN" ]; then
+            echo "ERROR: GitHub Secret HTVANTIX_APP_TOKEN is empty or missing"
+            exit 1
+          fi
+
+          PLIST=$(find work -type f -path "*/ThreeOneOSFive/Info.plist" | head -1)
+
+          if [ -z "$PLIST" ]; then
+            echo "ERROR: Info.plist not found"
+            exit 1
+          fi
+
+          /usr/libexec/PlistBuddy \
+            -c "Set :HTVANTIX_APP_TOKEN $HTVANTIX_APP_TOKEN" \
+            "$PLIST" || \
+          /usr/libexec/PlistBuddy \
+            -c "Add :HTVANTIX_APP_TOKEN string $HTVANTIX_APP_TOKEN" \
+            "$PLIST"
+
+          echo "Token injected"
+          echo "Token length: ${#HTVANTIX_APP_TOKEN}"
 
       - name: Select Xcode
         run: |
@@ -61,7 +88,7 @@ jobs:
             -project "$PROJECT" \
             -list
 
-      - name: Build HTVANTIX Premium
+      - name: Build HTVANTIX
         shell: bash
         run: |
           set +e
@@ -107,7 +134,7 @@ jobs:
 
           exit $STATUS
 
-      - name: Package unsigned IPA
+      - name: Package IPA
         if: success()
         shell: bash
         run: |
@@ -132,21 +159,21 @@ jobs:
 
           cp -R "$APP" Payload/
 
-          rm -f HTVANTIX_PREMIUM_unsigned.ipa
+          rm -f HTVANTIX_FINAL_unsigned.ipa
 
           zip -qry \
-            HTVANTIX_PREMIUM_unsigned.ipa \
+            HTVANTIX_FINAL_unsigned.ipa \
             Payload
 
           echo ""
           echo "===== IPA CREATED ====="
-          ls -lh HTVANTIX_PREMIUM_unsigned.ipa
+          ls -lh HTVANTIX_FINAL_unsigned.ipa
 
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-PREMIUM-build-log
+          name: HTVANTIX-FINAL-build-log
           path: build.log
           if-no-files-found: ignore
 
@@ -154,6 +181,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-PREMIUM-IPA
-          path: HTVANTIX_PREMIUM_unsigned.ipa
+          name: HTVANTIX-FINAL-IPA
+          path: HTVANTIX_FINAL_unsigned.ipa
           if-no-files-found: error
