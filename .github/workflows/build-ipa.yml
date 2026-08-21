@@ -1,4 +1,4 @@
-name: Build HTVANTIX License Home IPA
+name: Build HTVANTIX 8.11 Branded IPA
 
 on:
   workflow_dispatch:
@@ -17,22 +17,25 @@ jobs:
       - name: Verify source
         shell: bash
         run: |
-          SOURCE_ZIP="HTVANTIX_LICENSE_HOME_ONLY_FINAL_SOURCE.zip"
+          SOURCE_ZIP="HTVANTIX_BRANDING_811_FINAL_SOURCE.zip"
 
           if [ ! -f "$SOURCE_ZIP" ]; then
             echo "ERROR: Missing $SOURCE_ZIP"
             exit 1
           fi
 
+          echo "FOUND SOURCE:"
           ls -lh "$SOURCE_ZIP"
 
       - name: Extract source
         shell: bash
         run: |
+          set -e
+
           rm -rf work
           mkdir -p work
 
-          unzip -q HTVANTIX_LICENSE_HOME_ONLY_FINAL_SOURCE.zip -d work
+          unzip -q HTVANTIX_BRANDING_811_FINAL_SOURCE.zip -d work
 
           echo "===== XCODE PROJECT ====="
           find work -maxdepth 4 -type d -name "*.xcodeproj" -print
@@ -116,6 +119,8 @@ jobs:
         if: success()
         shell: bash
         run: |
+          set -e
+
           APP=$(find build/DerivedData/Build/Products/Release-iphoneos \
             -maxdepth 1 \
             -type d \
@@ -127,24 +132,29 @@ jobs:
             exit 1
           fi
 
+          echo "FOUND APP:"
+          echo "$APP"
+
           rm -rf Payload
           mkdir -p Payload
 
           cp -R "$APP" Payload/
 
-          rm -f HTVANTIX_LICENSE_HOME_unsigned.ipa
+          rm -f HTVANTIX_8.11_unsigned.ipa
 
           zip -qry \
-            HTVANTIX_LICENSE_HOME_unsigned.ipa \
+            HTVANTIX_8.11_unsigned.ipa \
             Payload
 
-          ls -lh HTVANTIX_LICENSE_HOME_unsigned.ipa
+          echo ""
+          echo "===== IPA CREATED ====="
+          ls -lh HTVANTIX_8.11_unsigned.ipa
 
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-LICENSE-HOME-build-log
+          name: HTVANTIX-8.11-build-log
           path: build.log
           if-no-files-found: ignore
 
@@ -152,6 +162,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-LICENSE-HOME-IPA
-          path: HTVANTIX_LICENSE_HOME_unsigned.ipa
+          name: HTVANTIX-8.11-IPA
+          path: HTVANTIX_8.11_unsigned.ipa
           if-no-files-found: error
