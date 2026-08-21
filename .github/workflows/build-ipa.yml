@@ -1,4 +1,4 @@
-name: Build HTVANTIX Cyber IPA
+name: Build HTVANTIX Premium IPA
 
 on:
   workflow_dispatch:
@@ -17,32 +17,27 @@ jobs:
       - name: Verify source ZIP
         shell: bash
         run: |
-          echo "===== REPOSITORY FILES ====="
-          ls -lah
-
-          SOURCE_ZIP="HTVANTIX_UI_CYBER_FINAL_V2_SOURCE.zip"
+          SOURCE_ZIP="HTVANTIX_PREMIUM_BLACK_API_FIX_SOURCE.zip"
 
           if [ ! -f "$SOURCE_ZIP" ]; then
-            echo "ERROR: Cannot find $SOURCE_ZIP"
+            echo "ERROR: Missing $SOURCE_ZIP"
             exit 1
           fi
 
           echo "FOUND SOURCE:"
           ls -lh "$SOURCE_ZIP"
 
-      - name: Extract Cyber source
+      - name: Extract source
         shell: bash
         run: |
           set -e
 
-          SOURCE_ZIP="HTVANTIX_UI_CYBER_FINAL_V2_SOURCE.zip"
-
           rm -rf work
           mkdir -p work
 
-          unzip -q "$SOURCE_ZIP" -d work
+          unzip -q HTVANTIX_PREMIUM_BLACK_API_FIX_SOURCE.zip -d work
 
-          echo "===== EXTRACTED SOURCE ====="
+          echo "===== XCODE PROJECT ====="
           find work -maxdepth 4 -type d -name "*.xcodeproj" -print
 
       - name: Select Xcode
@@ -53,8 +48,6 @@ jobs:
       - name: Detect project and scheme
         shell: bash
         run: |
-          set -e
-
           PROJECT=$(find work -type d -name "*.xcodeproj" | head -1)
 
           if [ -z "$PROJECT" ]; then
@@ -64,10 +57,11 @@ jobs:
 
           echo "PROJECT=$PROJECT"
 
-          echo "===== XCODE PROJECT ====="
-          xcodebuild -project "$PROJECT" -list
+          xcodebuild \
+            -project "$PROJECT" \
+            -list
 
-      - name: Build HTVANTIX Cyber app
+      - name: Build HTVANTIX Premium
         shell: bash
         run: |
           set +e
@@ -86,7 +80,6 @@ jobs:
             python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["project"]["schemes"][0])')
 
           echo "================================"
-          echo "BUILDING CYBER SOURCE"
           echo "PROJECT = $PROJECT"
           echo "SCHEME  = $SCHEME"
           echo "================================"
@@ -139,25 +132,28 @@ jobs:
 
           cp -R "$APP" Payload/
 
-          rm -f HTVANTIX_CYBER_unsigned.ipa
-          zip -qry HTVANTIX_CYBER_unsigned.ipa Payload
+          rm -f HTVANTIX_PREMIUM_unsigned.ipa
+
+          zip -qry \
+            HTVANTIX_PREMIUM_unsigned.ipa \
+            Payload
 
           echo ""
           echo "===== IPA CREATED ====="
-          ls -lh HTVANTIX_CYBER_unsigned.ipa
+          ls -lh HTVANTIX_PREMIUM_unsigned.ipa
 
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-CYBER-build-log
+          name: HTVANTIX-PREMIUM-build-log
           path: build.log
           if-no-files-found: ignore
 
-      - name: Upload Cyber IPA
+      - name: Upload IPA
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-CYBER-IPA
-          path: HTVANTIX_CYBER_unsigned.ipa
+          name: HTVANTIX-PREMIUM-IPA
+          path: HTVANTIX_PREMIUM_unsigned.ipa
           if-no-files-found: error
