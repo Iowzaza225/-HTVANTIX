@@ -17,7 +17,7 @@ jobs:
       - name: Verify source ZIP
         shell: bash
         run: |
-          SOURCE_ZIP="HTVANTIX_PREMIUM_BLACK_API_FIX_SOURCE.zip"
+          SOURCE_ZIP="HTVANTIX_PREMIUM_BLACK_API_FIX1_SOURCE.zip"
 
           if [ ! -f "$SOURCE_ZIP" ]; then
             echo "ERROR: Missing $SOURCE_ZIP"
@@ -35,7 +35,7 @@ jobs:
           rm -rf work
           mkdir -p work
 
-          unzip -q HTVANTIX_PREMIUM_BLACK_API_FIX_SOURCE.zip -d work
+          unzip -q HTVANTIX_PREMIUM_BLACK_API_FIX1_SOURCE.zip -d work
 
           echo "===== XCODE PROJECT ====="
           find work -maxdepth 4 -type d -name "*.xcodeproj" -print
