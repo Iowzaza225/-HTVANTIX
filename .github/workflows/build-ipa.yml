@@ -18,7 +18,7 @@ jobs:
         run: |
           rm -rf work
           mkdir -p work
-          unzip -q HTVANTIX_READY_API_PATCH_FINAL_SOURCE_FIX1.zip -d work
+          unzip -q HTVANTIX_READY_API_PATCH_FINAL_SOURCE_FIX2B.zip -d work
 
           echo "===== PROJECT FILES ====="
           find work -maxdepth 4 -type d -name "*.xcodeproj" -print
