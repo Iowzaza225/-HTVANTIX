@@ -18,7 +18,7 @@ jobs:
         run: |
           rm -rf work
           mkdir -p work
-          unzip -q HTVANTIX_READY_API_PATCH_FINAL_SOURCE.zip -d work
+          unzip -q HTVANTIX_READY_API_PATCH_FINAL_SOURCE_FIX1.zip -d work
 
           echo "===== PROJECT FILES ====="
           find work -maxdepth 4 -type d -name "*.xcodeproj" -print
@@ -93,11 +93,15 @@ jobs:
             exit 1
           fi
 
+          echo "APP=$APP"
+
           rm -rf Payload
           mkdir Payload
           cp -R "$APP" Payload/
 
           zip -qry HTVANTIX_unsigned.ipa Payload
+
+          ls -lh HTVANTIX_unsigned.ipa
 
       - name: Upload build log on failure
         if: failure()
