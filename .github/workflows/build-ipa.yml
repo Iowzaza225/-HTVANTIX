@@ -1,4 +1,4 @@
-name: Build HTVANTIX Capture Protected IPA
+name: Build HTVANTIX Device Lock IPA
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
         run: |
           set -e
 
-          SOURCE_ZIP="HTVANTIX_VNEXT_CAPTURE_PROTECTED.zip"
+          SOURCE_ZIP="HTVANTIX_VNEXT_DEVICE_LOCK_PATCH_FLOW.zip"
 
           if [ ! -f "$SOURCE_ZIP" ]; then
             echo "ERROR: Missing $SOURCE_ZIP"
@@ -31,17 +31,17 @@ jobs:
 
           unzip -q "$SOURCE_ZIP" -d work
 
+          test -d "work/HTVANTIX.xcodeproj" || {
+            echo "ERROR: HTVANTIX.xcodeproj not found"
+            exit 1
+          }
+
           test -f "work/HTVANTIX/Info.plist" || {
             echo "ERROR: Info.plist not found"
             exit 1
           }
 
-          test -d "work/HTVANTIX.xcodeproj" || {
-            echo "ERROR: Xcode project not found"
-            exit 1
-          }
-
-          echo "Source extracted successfully"
+          echo "Source extracted"
 
       - name: Fix app identity
         shell: bash
@@ -87,12 +87,43 @@ jobs:
 
           /usr/libexec/PlistBuddy \
             -c "Set :HTVANTIXAppToken $HTVANTIX_APP_TOKEN" \
-            "$PLIST" 2>/dev/null || \
-          /usr/libexec/PlistBuddy \
-            -c "Add :HTVANTIXAppToken string $HTVANTIX_APP_TOKEN" \
             "$PLIST"
 
           echo "App token injected"
+
+      - name: Verify source info
+        shell: bash
+        run: |
+          set -e
+
+          PLIST="work/HTVANTIX/Info.plist"
+          PBX="work/HTVANTIX.xcodeproj/project.pbxproj"
+
+          DISPLAY=$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleDisplayName" "$PLIST")
+
+          VERSION=$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleShortVersionString" "$PLIST")
+
+          BUILD=$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleVersion" "$PLIST")
+
+          BUILD_ID=$(/usr/libexec/PlistBuddy \
+            -c "Print :HTVANTIXBuildID" "$PLIST")
+
+          echo "Name: $DISPLAY"
+          echo "Version: $VERSION"
+          echo "Build: $BUILD"
+          echo "Build ID: $BUILD_ID"
+
+          test "$DISPLAY" = "HTVANTIX"
+          test "$VERSION" = "8.11"
+          test "$BUILD" = "68"
+          test "$BUILD_ID" = "HTV-811-68-V41"
+
+          grep -q \
+            'PRODUCT_BUNDLE_IDENTIFIER = com.htblackshop.htvantix;' \
+            "$PBX"
 
       - name: Select Xcode
         shell: bash
@@ -126,7 +157,8 @@ jobs:
 
           echo ""
           echo "========== XCODE ERRORS =========="
-          grep -nE ':[0-9]+:[0-9]+: (error|fatal error):' \
+          grep -nE \
+            ':[0-9]+:[0-9]+: (error|fatal error):' \
             build.log || true
           echo "=================================="
 
@@ -136,6 +168,8 @@ jobs:
         if: success()
         shell: bash
         run: |
+          set -e
+
           APP=$(find \
             build/DerivedData/Build/Products/Release-iphoneos \
             -maxdepth 1 \
@@ -161,27 +195,22 @@ jobs:
           PLIST="$APP_PATH/Info.plist"
 
           DISPLAY=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleDisplayName" \
-            "$PLIST")
+            -c "Print :CFBundleDisplayName" "$PLIST")
 
           BUNDLE_ID=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleIdentifier" \
-            "$PLIST")
+            -c "Print :CFBundleIdentifier" "$PLIST")
 
           VERSION=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleShortVersionString" \
-            "$PLIST")
+            -c "Print :CFBundleShortVersionString" "$PLIST")
 
           BUILD=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleVersion" \
-            "$PLIST")
+            -c "Print :CFBundleVersion" "$PLIST")
 
           BUILD_ID=$(/usr/libexec/PlistBuddy \
-            -c "Print :HTVANTIXBuildID" \
-            "$PLIST")
+            -c "Print :HTVANTIXBuildID" "$PLIST")
 
           echo ""
-          echo "========== HTVANTIX =========="
+          echo "========== BUILT APP =========="
           echo "Name      : $DISPLAY"
           echo "Bundle ID : $BUNDLE_ID"
           echo "Version   : $VERSION"
@@ -206,7 +235,7 @@ jobs:
 
           cp -R "$APP_PATH" Payload/
 
-          IPA="HTVANTIX_CAPTURE_PROTECTED_8.11_68_V41_unsigned.ipa"
+          IPA="HTVANTIX_DEVICE_LOCK_8.11_68_V41_unsigned.ipa"
 
           rm -f "$IPA"
 
@@ -220,7 +249,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-build-log
+          name: HTVANTIX-device-lock-build-log
           path: build.log
           if-no-files-found: ignore
 
@@ -228,6 +257,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-CAPTURE-PROTECTED-IPA
-          path: HTVANTIX_CAPTURE_PROTECTED_8.11_68_V41_unsigned.ipa
+          name: HTVANTIX-DEVICE-LOCK-IPA
+          path: HTVANTIX_DEVICE_LOCK_8.11_68_V41_unsigned.ipa
           if-no-files-found: error
