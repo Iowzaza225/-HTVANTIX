@@ -1,4 +1,4 @@
-name: Build HTVANTIX Download ID Fix IPA
+name: Build HTVANTIX 8.11 IPA
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
         run: |
           set -e
 
-          SOURCE_ZIP="HTVANTIX_VNEXT_DEVICE_LOCK_PATCH_FLOW_DOWNLOAD_ID_FIX.zip"
+          SOURCE_ZIP="HTV811.zip"
 
           if [ ! -f "$SOURCE_ZIP" ]; then
             echo "ERROR: Missing $SOURCE_ZIP"
@@ -31,25 +31,29 @@ jobs:
 
           unzip -q "$SOURCE_ZIP" -d work
 
-          echo "===== SOURCE ====="
-          find work -maxdepth 3 -type d -name "*.xcodeproj" -print
+          ROOT="work/HTVANTIX_3105_BASE_UI_SECURITY_MERGE"
 
-          test -d "work/HTVANTIX.xcodeproj" || {
+          test -d "$ROOT/HTVANTIX.xcodeproj" || {
             echo "ERROR: HTVANTIX.xcodeproj not found"
             exit 1
           }
 
-          test -f "work/HTVANTIX/Info.plist" || {
-            echo "ERROR: HTVANTIX/Info.plist not found"
+          test -f "$ROOT/HTVANTIX/Info.plist" || {
+            echo "ERROR: Info.plist not found"
             exit 1
           }
 
-      - name: Fix app identity
+          echo "PROJECT_ROOT=$ROOT" >> "$GITHUB_ENV"
+
+          echo "===== SOURCE READY ====="
+          echo "$ROOT"
+
+      - name: Fix Info.plist identity
         shell: bash
         run: |
           set -e
 
-          PLIST="work/HTVANTIX/Info.plist"
+          PLIST="$PROJECT_ROOT/HTVANTIX/Info.plist"
 
           /usr/libexec/PlistBuddy \
             -c "Set :CFBundleIdentifier \$(PRODUCT_BUNDLE_IDENTIFIER)" \
@@ -80,11 +84,11 @@ jobs:
           set -e
 
           if [ -z "$HTVANTIX_APP_TOKEN" ]; then
-            echo "ERROR: GitHub Secret HTVANTIX_APP_TOKEN is missing"
+            echo "ERROR: Missing GitHub Secret HTVANTIX_APP_TOKEN"
             exit 1
           fi
 
-          PLIST="work/HTVANTIX/Info.plist"
+          PLIST="$PROJECT_ROOT/HTVANTIX/Info.plist"
 
           /usr/libexec/PlistBuddy \
             -c "Set :HTVANTIXAppToken $HTVANTIX_APP_TOKEN" \
@@ -100,10 +104,10 @@ jobs:
         run: |
           set -e
 
-          PLIST="work/HTVANTIX/Info.plist"
-          PBX="work/HTVANTIX.xcodeproj/project.pbxproj"
+          PLIST="$PROJECT_ROOT/HTVANTIX/Info.plist"
+          PBX="$PROJECT_ROOT/HTVANTIX.xcodeproj/project.pbxproj"
 
-          DISPLAY=$(/usr/libexec/PlistBuddy \
+          NAME=$(/usr/libexec/PlistBuddy \
             -c "Print :CFBundleDisplayName" "$PLIST")
 
           VERSION=$(/usr/libexec/PlistBuddy \
@@ -116,14 +120,14 @@ jobs:
             -c "Print :HTVANTIXBuildID" "$PLIST")
 
           echo ""
-          echo "===== SOURCE INFO ====="
-          echo "Name     : $DISPLAY"
+          echo "========== SOURCE =========="
+          echo "Name     : $NAME"
           echo "Version  : $VERSION"
           echo "Build    : $BUILD"
           echo "Build ID : $BUILD_ID"
-          echo "======================="
+          echo "============================"
 
-          test "$DISPLAY" = "HTVANTIX"
+          test "$NAME" = "HTVANTIX"
           test "$VERSION" = "8.11"
           test "$BUILD" = "68"
           test "$BUILD_ID" = "HTV-811-68-V41"
@@ -131,7 +135,7 @@ jobs:
           grep -q \
             'PRODUCT_BUNDLE_IDENTIFIER = com.htblackshop.htvantix;' \
             "$PBX" || {
-              echo "ERROR: Wrong PRODUCT_BUNDLE_IDENTIFIER"
+              echo "ERROR: Wrong Bundle ID"
               exit 1
             }
 
@@ -143,14 +147,15 @@ jobs:
 
           xcodebuild -version
 
-      - name: Verify Xcode project
+      - name: Check project
         shell: bash
         run: |
           xcodebuild \
-            -project work/HTVANTIX.xcodeproj \
+            -project "$PROJECT_ROOT/HTVANTIX.xcodeproj" \
+            -scheme HTVANTIX \
             -list
 
-      - name: Build HTVANTIX
+      - name: Build unsigned app
         shell: bash
         run: |
           set +e
@@ -159,7 +164,7 @@ jobs:
           mkdir -p build
 
           xcodebuild \
-            -project work/HTVANTIX.xcodeproj \
+            -project "$PROJECT_ROOT/HTVANTIX.xcodeproj" \
             -scheme HTVANTIX \
             -configuration Release \
             -sdk iphoneos \
@@ -202,7 +207,7 @@ jobs:
           fi
 
           echo "APP_PATH=$APP" >> "$GITHUB_ENV"
-          echo "FOUND APP: $APP"
+          echo "APP=$APP"
 
       - name: Verify built app
         if: success()
@@ -212,7 +217,7 @@ jobs:
 
           PLIST="$APP_PATH/Info.plist"
 
-          DISPLAY=$(/usr/libexec/PlistBuddy \
+          NAME=$(/usr/libexec/PlistBuddy \
             -c "Print :CFBundleDisplayName" "$PLIST")
 
           BUNDLE_ID=$(/usr/libexec/PlistBuddy \
@@ -229,14 +234,14 @@ jobs:
 
           echo ""
           echo "========== BUILT APP =========="
-          echo "Name      : $DISPLAY"
+          echo "Name      : $NAME"
           echo "Bundle ID : $BUNDLE_ID"
           echo "Version   : $VERSION"
           echo "Build     : $BUILD"
           echo "Build ID  : $BUILD_ID"
           echo "==============================="
 
-          test "$DISPLAY" = "HTVANTIX"
+          test "$NAME" = "HTVANTIX"
           test "$BUNDLE_ID" = "com.htblackshop.htvantix"
           test "$VERSION" = "8.11"
           test "$BUILD" = "68"
@@ -253,21 +258,22 @@ jobs:
 
           cp -R "$APP_PATH" Payload/
 
-          IPA="HTVANTIX_DOWNLOAD_ID_FIX_8.11_68_V41_unsigned.ipa"
+          IPA="HTVANTIX_8.11_68_V41_unsigned.ipa"
 
           rm -f "$IPA"
 
           zip -qry "$IPA" Payload
 
           echo ""
-          echo "===== IPA CREATED ====="
+          echo "========== IPA CREATED =========="
           ls -lh "$IPA"
+          echo "================================="
 
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-download-id-fix-build-log
+          name: HTVANTIX-build-log
           path: build.log
           if-no-files-found: ignore
 
@@ -275,6 +281,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-DOWNLOAD-ID-FIX-IPA
-          path: HTVANTIX_DOWNLOAD_ID_FIX_8.11_68_V41_unsigned.ipa
+          name: HTVANTIX-811-IPA
+          path: HTVANTIX_8.11_68_V41_unsigned.ipa
           if-no-files-found: error
