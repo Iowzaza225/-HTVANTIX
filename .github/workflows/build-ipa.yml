@@ -1,4 +1,4 @@
-name: Build HTVANTIX Final IPA
+name: Build HTVANTIX Capture Protected IPA
 
 on:
   workflow_dispatch:
@@ -14,80 +14,42 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ============================================================
-      # 1. PREPARE SOURCE
-      # ใช้ได้ทั้ง:
-      # - repo ที่แตก source แล้ว
-      # - repo ที่มี ZIP source อยู่
-      # ============================================================
-      - name: Prepare HTVANTIX source
+      - name: Extract source
         shell: bash
         run: |
           set -e
 
-          echo "===== REPOSITORY ====="
-          ls -lah
+          SOURCE_ZIP="HTVANTIX_VNEXT_CAPTURE_PROTECTED.zip"
 
-          # ถ้ามี project อยู่แล้ว ใช้ root repo ได้เลย
-          if [ -d "HTVANTIX.xcodeproj" ] && [ -f "HTVANTIX/Info.plist" ]; then
-
-            echo "Source already extracted"
-            echo "SOURCE_ROOT=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
-
-          else
-
-            echo "Searching for HTVANTIX source ZIP..."
-
-            SOURCE_ZIP=""
-
-            for ZIP in ./*.zip; do
-              [ -f "$ZIP" ] || continue
-
-              if unzip -l "$ZIP" | grep -q "HTVANTIX.xcodeproj/project.pbxproj"; then
-                SOURCE_ZIP="$ZIP"
-                break
-              fi
-            done
-
-            if [ -z "$SOURCE_ZIP" ]; then
-              echo "ERROR: HTVANTIX source not found"
-              exit 1
-            fi
-
-            echo "FOUND ZIP: $SOURCE_ZIP"
-
-            rm -rf work
-            mkdir -p work
-
-            unzip -q "$SOURCE_ZIP" -d work
-
-            test -d "work/HTVANTIX.xcodeproj" || {
-              echo "ERROR: HTVANTIX.xcodeproj not found"
-              exit 1
-            }
-
-            test -f "work/HTVANTIX/Info.plist" || {
-              echo "ERROR: HTVANTIX/Info.plist not found"
-              exit 1
-            }
-
-            echo "SOURCE_ROOT=$GITHUB_WORKSPACE/work" >> "$GITHUB_ENV"
+          if [ ! -f "$SOURCE_ZIP" ]; then
+            echo "ERROR: Missing $SOURCE_ZIP"
+            exit 1
           fi
 
-      # ============================================================
-      # 2. FIX REQUIRED APP PLIST KEYS
-      # แก้ปัญหา Bundle ID ว่างตอนเอา IPA ไป Sign
-      # ============================================================
+          rm -rf work
+          mkdir -p work
+
+          unzip -q "$SOURCE_ZIP" -d work
+
+          test -f "work/HTVANTIX/Info.plist" || {
+            echo "ERROR: Info.plist not found"
+            exit 1
+          }
+
+          test -d "work/HTVANTIX.xcodeproj" || {
+            echo "ERROR: Xcode project not found"
+            exit 1
+          }
+
+          echo "Source extracted successfully"
+
       - name: Fix app identity
         shell: bash
         run: |
           set -e
 
-          PLIST="$SOURCE_ROOT/HTVANTIX/Info.plist"
+          PLIST="work/HTVANTIX/Info.plist"
 
-          echo "PLIST=$PLIST"
-
-          # Bundle Identifier
           /usr/libexec/PlistBuddy \
             -c "Set :CFBundleIdentifier \$(PRODUCT_BUNDLE_IDENTIFIER)" \
             "$PLIST" 2>/dev/null || \
@@ -95,7 +57,6 @@ jobs:
             -c "Add :CFBundleIdentifier string \$(PRODUCT_BUNDLE_IDENTIFIER)" \
             "$PLIST"
 
-          # Executable
           /usr/libexec/PlistBuddy \
             -c "Set :CFBundleExecutable \$(EXECUTABLE_NAME)" \
             "$PLIST" 2>/dev/null || \
@@ -103,7 +64,6 @@ jobs:
             -c "Add :CFBundleExecutable string \$(EXECUTABLE_NAME)" \
             "$PLIST"
 
-          # Package Type
           /usr/libexec/PlistBuddy \
             -c "Set :CFBundlePackageType APPL" \
             "$PLIST" 2>/dev/null || \
@@ -111,11 +71,6 @@ jobs:
             -c "Add :CFBundlePackageType string APPL" \
             "$PLIST"
 
-          echo "Required Info.plist keys added"
-
-      # ============================================================
-      # 3. INJECT APP TOKEN
-      # ============================================================
       - name: Inject app token
         shell: bash
         env:
@@ -128,7 +83,7 @@ jobs:
             exit 1
           fi
 
-          PLIST="$SOURCE_ROOT/HTVANTIX/Info.plist"
+          PLIST="work/HTVANTIX/Info.plist"
 
           /usr/libexec/PlistBuddy \
             -c "Set :HTVANTIXAppToken $HTVANTIX_APP_TOKEN" \
@@ -139,57 +94,6 @@ jobs:
 
           echo "App token injected"
 
-      # ============================================================
-      # 4. VERIFY SOURCE INFO
-      # ============================================================
-      - name: Verify source
-        shell: bash
-        run: |
-          set -e
-
-          PLIST="$SOURCE_ROOT/HTVANTIX/Info.plist"
-          PBX="$SOURCE_ROOT/HTVANTIX.xcodeproj/project.pbxproj"
-
-          DISPLAY=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleDisplayName" \
-            "$PLIST")
-
-          VERSION=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleShortVersionString" \
-            "$PLIST")
-
-          BUILD=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleVersion" \
-            "$PLIST")
-
-          BUILD_ID=$(/usr/libexec/PlistBuddy \
-            -c "Print :HTVANTIXBuildID" \
-            "$PLIST")
-
-          echo "====================================="
-          echo "Name     : $DISPLAY"
-          echo "Version  : $VERSION"
-          echo "Build    : $BUILD"
-          echo "Build ID : $BUILD_ID"
-          echo "====================================="
-
-          test "$DISPLAY" = "HTVANTIX" || exit 1
-          test "$VERSION" = "8.11" || exit 1
-          test "$BUILD" = "68" || exit 1
-          test "$BUILD_ID" = "HTV-811-68-V41" || exit 1
-
-          grep -q \
-            'PRODUCT_BUNDLE_IDENTIFIER = com.htblackshop.htvantix;' \
-            "$PBX" || {
-              echo "ERROR: PRODUCT_BUNDLE_IDENTIFIER incorrect"
-              exit 1
-            }
-
-          echo "Source verification passed"
-
-      # ============================================================
-      # 5. SELECT XCODE
-      # ============================================================
       - name: Select Xcode
         shell: bash
         run: |
@@ -198,35 +102,19 @@ jobs:
 
           xcodebuild -version
 
-      # ============================================================
-      # 6. SHOW XCODE PROJECT
-      # ============================================================
-      - name: Verify Xcode project
-        shell: bash
-        run: |
-          set -e
-
-          xcodebuild \
-            -project "$SOURCE_ROOT/HTVANTIX.xcodeproj" \
-            -list
-
-      # ============================================================
-      # 7. BUILD UNSIGNED APP
-      # ============================================================
       - name: Build HTVANTIX
         shell: bash
         run: |
           set +e
 
           rm -rf build
-          mkdir -p build
 
           xcodebuild \
-            -project "$SOURCE_ROOT/HTVANTIX.xcodeproj" \
+            -project work/HTVANTIX.xcodeproj \
             -scheme HTVANTIX \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath "$GITHUB_WORKSPACE/build/DerivedData" \
+            -derivedDataPath build/DerivedData \
             PRODUCT_BUNDLE_IDENTIFIER="com.htblackshop.htvantix" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -238,26 +126,18 @@ jobs:
 
           echo ""
           echo "========== XCODE ERRORS =========="
-
-          grep -nE \
-            ':[0-9]+:[0-9]+: (error|fatal error):' \
+          grep -nE ':[0-9]+:[0-9]+: (error|fatal error):' \
             build.log || true
-
           echo "=================================="
 
           exit $STATUS
 
-      # ============================================================
-      # 8. FIND BUILT .APP
-      # ============================================================
       - name: Find built app
         if: success()
         shell: bash
         run: |
-          set -e
-
           APP=$(find \
-            "$GITHUB_WORKSPACE/build/DerivedData/Build/Products/Release-iphoneos" \
+            build/DerivedData/Build/Products/Release-iphoneos \
             -maxdepth 1 \
             -type d \
             -name "*.app" \
@@ -270,14 +150,8 @@ jobs:
           fi
 
           echo "APP_PATH=$APP" >> "$GITHUB_ENV"
+          echo "APP=$APP"
 
-          echo "FOUND APP:"
-          echo "$APP"
-
-      # ============================================================
-      # 9. VERIFY FINAL BUILT APP
-      # สำคัญ: ตรวจ Bundle ID หลัง Xcode build จริง
-      # ============================================================
       - name: Verify built app
         if: success()
         shell: bash
@@ -306,61 +180,21 @@ jobs:
             -c "Print :HTVANTIXBuildID" \
             "$PLIST")
 
-          EXECUTABLE=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleExecutable" \
-            "$PLIST")
-
-          PACKAGE_TYPE=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundlePackageType" \
-            "$PLIST")
-
           echo ""
-          echo "========== BUILT APP =========="
-          echo "Name        : $DISPLAY"
-          echo "Bundle ID   : $BUNDLE_ID"
-          echo "Version     : $VERSION"
-          echo "Build       : $BUILD"
-          echo "Build ID    : $BUILD_ID"
-          echo "Executable  : $EXECUTABLE"
-          echo "Package Type: $PACKAGE_TYPE"
+          echo "========== HTVANTIX =========="
+          echo "Name      : $DISPLAY"
+          echo "Bundle ID : $BUNDLE_ID"
+          echo "Version   : $VERSION"
+          echo "Build     : $BUILD"
+          echo "Build ID  : $BUILD_ID"
           echo "==============================="
 
-          test "$DISPLAY" = "HTVANTIX" || {
-            echo "ERROR: Wrong app name"
-            exit 1
-          }
+          test "$DISPLAY" = "HTVANTIX"
+          test "$BUNDLE_ID" = "com.htblackshop.htvantix"
+          test "$VERSION" = "8.11"
+          test "$BUILD" = "68"
+          test "$BUILD_ID" = "HTV-811-68-V41"
 
-          test "$BUNDLE_ID" = "com.htblackshop.htvantix" || {
-            echo "ERROR: Bundle ID missing or incorrect"
-            exit 1
-          }
-
-          test "$VERSION" = "8.11" || {
-            echo "ERROR: Wrong version"
-            exit 1
-          }
-
-          test "$BUILD" = "68" || {
-            echo "ERROR: Wrong build"
-            exit 1
-          }
-
-          test "$BUILD_ID" = "HTV-811-68-V41" || {
-            echo "ERROR: Wrong Build ID"
-            exit 1
-          }
-
-          test "$PACKAGE_TYPE" = "APPL" || {
-            echo "ERROR: Wrong package type"
-            exit 1
-          }
-
-          echo ""
-          echo "FINAL APP VERIFICATION PASSED"
-
-      # ============================================================
-      # 10. PACKAGE IPA
-      # ============================================================
       - name: Package unsigned IPA
         if: success()
         shell: bash
@@ -372,24 +206,16 @@ jobs:
 
           cp -R "$APP_PATH" Payload/
 
-          IPA_NAME="HTVANTIX_8.11_68_V41_unsigned.ipa"
+          IPA="HTVANTIX_CAPTURE_PROTECTED_8.11_68_V41_unsigned.ipa"
 
-          rm -f "$IPA_NAME"
+          rm -f "$IPA"
 
-          zip -qry \
-            "$IPA_NAME" \
-            Payload
-
-          echo "IPA_NAME=$IPA_NAME" >> "$GITHUB_ENV"
+          zip -qry "$IPA" Payload
 
           echo ""
-          echo "========== IPA CREATED =========="
-          ls -lh "$IPA_NAME"
-          echo "================================="
+          echo "===== IPA CREATED ====="
+          ls -lh "$IPA"
 
-      # ============================================================
-      # 11. UPLOAD LOG IF BUILD FAILS
-      # ============================================================
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -398,13 +224,10 @@ jobs:
           path: build.log
           if-no-files-found: ignore
 
-      # ============================================================
-      # 12. UPLOAD IPA
-      # ============================================================
       - name: Upload IPA
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-8.11-68-V41-IPA
-          path: HTVANTIX_8.11_68_V41_unsigned.ipa
+          name: HTVANTIX-CAPTURE-PROTECTED-IPA
+          path: HTVANTIX_CAPTURE_PROTECTED_8.11_68_V41_unsigned.ipa
           if-no-files-found: error
