@@ -1,4 +1,4 @@
-name: Build HTVANTIX Final UI IPA
+name: Build HTVANTIX Final IPA
 
 on:
   workflow_dispatch:
@@ -14,30 +14,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify source
-        shell: bash
-        run: |
-          SOURCE_ZIP="HTVANTIX_FINAL_UI_MERGED_SOURCE.zip"
-
-          if [ ! -f "$SOURCE_ZIP" ]; then
-            echo "ERROR: Missing $SOURCE_ZIP"
-            exit 1
-          fi
-
-          echo "FOUND SOURCE:"
-          ls -lh "$SOURCE_ZIP"
-
-      - name: Extract source
-        shell: bash
-        run: |
-          rm -rf work
-          mkdir -p work
-
-          unzip -q HTVANTIX_FINAL_UI_MERGED_SOURCE.zip -d work
-
-          echo "===== XCODE PROJECT ====="
-          find work -maxdepth 4 -type d -name "*.xcodeproj" -print
-
       - name: Inject app token
         shell: bash
         env:
@@ -48,57 +24,45 @@ jobs:
             exit 1
           fi
 
-          PLIST=$(find work -type f -path "*/ThreeOneOSFive/Info.plist" | head -1)
-
-          if [ -z "$PLIST" ]; then
-            echo "ERROR: Info.plist not found"
-            exit 1
-          fi
-
           /usr/libexec/PlistBuddy \
-            -c "Set :HTVANTIX_APP_TOKEN $HTVANTIX_APP_TOKEN" \
-            "$PLIST" || \
-          /usr/libexec/PlistBuddy \
-            -c "Add :HTVANTIX_APP_TOKEN string $HTVANTIX_APP_TOKEN" \
-            "$PLIST"
+            -c "Set :HTVANTIXAppToken $HTVANTIX_APP_TOKEN" \
+            HTVANTIX/Info.plist
 
           echo "App token injected"
 
-      - name: Verify branding before build
+      - name: Verify app info
         shell: bash
         run: |
-          PBX="work/ThreeOneOSFive.xcodeproj/project.pbxproj"
-          PLIST="work/ThreeOneOSFive/Info.plist"
+          DISPLAY=$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleDisplayName" \
+            HTVANTIX/Info.plist)
 
-          DISPLAY=$(/usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$PLIST")
-          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
+          VERSION=$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleShortVersionString" \
+            HTVANTIX/Info.plist)
 
-          echo "Display name: $DISPLAY"
+          BUILD=$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleVersion" \
+            HTVANTIX/Info.plist)
+
+          BUILD_ID=$(/usr/libexec/PlistBuddy \
+            -c "Print :HTVANTIXBuildID" \
+            HTVANTIX/Info.plist)
+
+          echo "Display Name: $DISPLAY"
           echo "Version: $VERSION"
+          echo "Build: $BUILD"
+          echo "Build ID: $BUILD_ID"
 
-          test "$DISPLAY" = "HTVANTIX" || {
-            echo "ERROR: Wrong app display name"
-            exit 1
-          }
-
-          test "$VERSION" = "8.11" || {
-            echo "ERROR: Wrong app version"
-            exit 1
-          }
-
-          grep -q 'INFOPLIST_KEY_CFBundleDisplayName = HTVANTIX;' "$PBX" || {
-            echo "ERROR: Xcode display name override is wrong"
-            exit 1
-          }
-
-          grep -q 'PRODUCT_NAME = HTVANTIX;' "$PBX" || {
-            echo "ERROR: Product name is wrong"
-            exit 1
-          }
+          test "$DISPLAY" = "HTVANTIX"
+          test "$VERSION" = "8.11"
+          test "$BUILD" = "68"
+          test "$BUILD_ID" = "HTV-811-68-V41"
 
       - name: Select Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          sudo xcode-select \
+            -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
       - name: Build HTVANTIX
@@ -106,30 +70,14 @@ jobs:
         run: |
           set +e
 
-          PROJECT=$(find work -type d -name "*.xcodeproj" | head -1)
-
-          if [ -z "$PROJECT" ]; then
-            echo "ERROR: Xcode project not found"
-            exit 1
-          fi
-
-          SCHEME=$(xcodebuild \
-            -project "$PROJECT" \
-            -list \
-            -json | \
-            python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["project"]["schemes"][0])')
-
-          echo "PROJECT=$PROJECT"
-          echo "SCHEME=$SCHEME"
-
           rm -rf build
 
           xcodebuild \
-            -project "$PROJECT" \
-            -scheme "$SCHEME" \
+            -project HTVANTIX.xcodeproj \
+            -scheme HTVANTIX \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath build/DerivedData \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -139,17 +87,19 @@ jobs:
           STATUS=${PIPESTATUS[0]}
 
           echo ""
-          echo "========== REAL XCODE ERRORS =========="
-          grep -nE ':[0-9]+:[0-9]+: (error|fatal error):' build.log || true
-          echo "======================================="
+          echo "========== XCODE ERRORS =========="
+          grep -nE ':[0-9]+:[0-9]+: (error|fatal error):' \
+            build.log || true
+          echo "=================================="
 
           exit $STATUS
 
-      - name: Verify built app branding
+      - name: Verify built app
         if: success()
         shell: bash
         run: |
-          APP=$(find build/DerivedData/Build/Products/Release-iphoneos \
+          APP=$(find \
+            build/Build/Products/Release-iphoneos \
             -maxdepth 1 \
             -type d \
             -name "*.app" \
@@ -160,27 +110,40 @@ jobs:
             exit 1
           fi
 
-          DISPLAY=$(/usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$APP/Info.plist")
-          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist")
+          echo "APP=$APP"
 
-          echo "BUILT DISPLAY NAME=$DISPLAY"
-          echo "BUILT VERSION=$VERSION"
+          DISPLAY=$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleDisplayName" \
+            "$APP/Info.plist")
 
-          test "$DISPLAY" = "HTVANTIX" || {
-            echo "ERROR: Built app is not named HTVANTIX"
-            exit 1
-          }
+          VERSION=$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleShortVersionString" \
+            "$APP/Info.plist")
 
-          test "$VERSION" = "8.11" || {
-            echo "ERROR: Built app version is not 8.11"
-            exit 1
-          }
+          BUILD=$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleVersion" \
+            "$APP/Info.plist")
 
-      - name: Package IPA
+          BUILD_ID=$(/usr/libexec/PlistBuddy \
+            -c "Print :HTVANTIXBuildID" \
+            "$APP/Info.plist")
+
+          echo "Built Name: $DISPLAY"
+          echo "Built Version: $VERSION"
+          echo "Built Build: $BUILD"
+          echo "Built ID: $BUILD_ID"
+
+          test "$DISPLAY" = "HTVANTIX"
+          test "$VERSION" = "8.11"
+          test "$BUILD" = "68"
+          test "$BUILD_ID" = "HTV-811-68-V41"
+
+      - name: Package unsigned IPA
         if: success()
         shell: bash
         run: |
-          APP=$(find build/DerivedData/Build/Products/Release-iphoneos \
+          APP=$(find \
+            build/Build/Products/Release-iphoneos \
             -maxdepth 1 \
             -type d \
             -name "*.app" \
@@ -191,21 +154,21 @@ jobs:
 
           cp -R "$APP" Payload/
 
-          rm -f HTVANTIX_8.11_FINAL_UI_unsigned.ipa
+          rm -f HTVANTIX_8.11_68_unsigned.ipa
 
           zip -qry \
-            HTVANTIX_8.11_FINAL_UI_unsigned.ipa \
+            HTVANTIX_8.11_68_unsigned.ipa \
             Payload
 
           echo ""
           echo "===== IPA CREATED ====="
-          ls -lh HTVANTIX_8.11_FINAL_UI_unsigned.ipa
+          ls -lh HTVANTIX_8.11_68_unsigned.ipa
 
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-FINAL-UI-build-log
+          name: HTVANTIX-build-log
           path: build.log
           if-no-files-found: ignore
 
@@ -213,6 +176,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-8.11-FINAL-UI-IPA
-          path: HTVANTIX_8.11_FINAL_UI_unsigned.ipa
+          name: HTVANTIX-8.11-68-IPA
+          path: HTVANTIX_8.11_68_unsigned.ipa
           if-no-files-found: error
