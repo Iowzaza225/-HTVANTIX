@@ -14,40 +14,89 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Find and extract HTVANTIX source
+        shell: bash
+        run: |
+          set -e
+
+          echo "===== REPOSITORY FILES ====="
+          find . -maxdepth 2 -type f -print
+
+          SOURCE_ZIP=""
+
+          for ZIP in ./*.zip; do
+            [ -f "$ZIP" ] || continue
+
+            if unzip -l "$ZIP" | grep -q "HTVANTIX/Info.plist"; then
+              SOURCE_ZIP="$ZIP"
+              break
+            fi
+          done
+
+          if [ -z "$SOURCE_ZIP" ]; then
+            echo "ERROR: No HTVANTIX source ZIP found"
+            exit 1
+          fi
+
+          echo "SOURCE ZIP=$SOURCE_ZIP"
+
+          rm -rf work
+          mkdir -p work
+
+          unzip -q "$SOURCE_ZIP" -d work
+
+          echo ""
+          echo "===== EXTRACTED SOURCE ====="
+          find work -maxdepth 3 -type f -print
+
+          test -f work/HTVANTIX/Info.plist || {
+            echo "ERROR: HTVANTIX/Info.plist not found after extraction"
+            exit 1
+          }
+
+          test -d work/HTVANTIX.xcodeproj || {
+            echo "ERROR: HTVANTIX.xcodeproj not found"
+            exit 1
+          }
+
       - name: Inject app token
         shell: bash
         env:
           HTVANTIX_APP_TOKEN: ${{ secrets.HTVANTIX_APP_TOKEN }}
         run: |
+          set -e
+
           if [ -z "$HTVANTIX_APP_TOKEN" ]; then
             echo "ERROR: GitHub Secret HTVANTIX_APP_TOKEN is missing"
             exit 1
           fi
 
+          PLIST="work/HTVANTIX/Info.plist"
+
           /usr/libexec/PlistBuddy \
             -c "Set :HTVANTIXAppToken $HTVANTIX_APP_TOKEN" \
-            HTVANTIX/Info.plist
+            "$PLIST"
 
-          echo "App token injected"
+          echo "App token injected successfully"
 
       - name: Verify app info
         shell: bash
         run: |
+          set -e
+
+          PLIST="work/HTVANTIX/Info.plist"
+
           DISPLAY=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleDisplayName" \
-            HTVANTIX/Info.plist)
+            -c "Print :CFBundleDisplayName" "$PLIST")
 
           VERSION=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleShortVersionString" \
-            HTVANTIX/Info.plist)
+            -c "Print :CFBundleShortVersionString" "$PLIST")
 
           BUILD=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleVersion" \
-            HTVANTIX/Info.plist)
+            -c "Print :CFBundleVersion" "$PLIST")
 
           BUILD_ID=$(/usr/libexec/PlistBuddy \
-            -c "Print :HTVANTIXBuildID" \
-            HTVANTIX/Info.plist)
+            -c "Print :HTVANTIXBuildID" "$PLIST")
 
           echo "Display Name: $DISPLAY"
           echo "Version: $VERSION"
@@ -60,9 +109,11 @@ jobs:
           test "$BUILD_ID" = "HTV-811-68-V41"
 
       - name: Select Xcode
+        shell: bash
         run: |
           sudo xcode-select \
             -s /Applications/Xcode.app/Contents/Developer
+
           xcodebuild -version
 
       - name: Build HTVANTIX
@@ -73,7 +124,7 @@ jobs:
           rm -rf build
 
           xcodebuild \
-            -project HTVANTIX.xcodeproj \
+            -project work/HTVANTIX.xcodeproj \
             -scheme HTVANTIX \
             -configuration Release \
             -sdk iphoneos \
@@ -87,10 +138,10 @@ jobs:
           STATUS=${PIPESTATUS[0]}
 
           echo ""
-          echo "========== XCODE ERRORS =========="
+          echo "========== REAL XCODE ERRORS =========="
           grep -nE ':[0-9]+:[0-9]+: (error|fatal error):' \
             build.log || true
-          echo "=================================="
+          echo "======================================="
 
           exit $STATUS
 
@@ -98,6 +149,8 @@ jobs:
         if: success()
         shell: bash
         run: |
+          set -e
+
           APP=$(find \
             build/Build/Products/Release-iphoneos \
             -maxdepth 1 \
@@ -142,12 +195,19 @@ jobs:
         if: success()
         shell: bash
         run: |
+          set -e
+
           APP=$(find \
             build/Build/Products/Release-iphoneos \
             -maxdepth 1 \
             -type d \
             -name "*.app" \
             | head -1)
+
+          if [ -z "$APP" ]; then
+            echo "ERROR: Built .app not found"
+            exit 1
+          fi
 
           rm -rf Payload
           mkdir -p Payload
