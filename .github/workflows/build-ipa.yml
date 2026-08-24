@@ -1,4 +1,4 @@
-name: Build HTVANTIX Device Lock IPA
+name: Build HTVANTIX Download ID Fix IPA
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
         run: |
           set -e
 
-          SOURCE_ZIP="HTVANTIX_VNEXT_DEVICE_LOCK_PATCH_FLOW.zip"
+          SOURCE_ZIP="HTVANTIX_VNEXT_DEVICE_LOCK_PATCH_FLOW_DOWNLOAD_ID_FIX.zip"
 
           if [ ! -f "$SOURCE_ZIP" ]; then
             echo "ERROR: Missing $SOURCE_ZIP"
@@ -31,17 +31,18 @@ jobs:
 
           unzip -q "$SOURCE_ZIP" -d work
 
+          echo "===== SOURCE ====="
+          find work -maxdepth 3 -type d -name "*.xcodeproj" -print
+
           test -d "work/HTVANTIX.xcodeproj" || {
             echo "ERROR: HTVANTIX.xcodeproj not found"
             exit 1
           }
 
           test -f "work/HTVANTIX/Info.plist" || {
-            echo "ERROR: Info.plist not found"
+            echo "ERROR: HTVANTIX/Info.plist not found"
             exit 1
           }
-
-          echo "Source extracted"
 
       - name: Fix app identity
         shell: bash
@@ -87,11 +88,14 @@ jobs:
 
           /usr/libexec/PlistBuddy \
             -c "Set :HTVANTIXAppToken $HTVANTIX_APP_TOKEN" \
+            "$PLIST" 2>/dev/null || \
+          /usr/libexec/PlistBuddy \
+            -c "Add :HTVANTIXAppToken string $HTVANTIX_APP_TOKEN" \
             "$PLIST"
 
           echo "App token injected"
 
-      - name: Verify source info
+      - name: Verify source
         shell: bash
         run: |
           set -e
@@ -111,10 +115,13 @@ jobs:
           BUILD_ID=$(/usr/libexec/PlistBuddy \
             -c "Print :HTVANTIXBuildID" "$PLIST")
 
-          echo "Name: $DISPLAY"
-          echo "Version: $VERSION"
-          echo "Build: $BUILD"
-          echo "Build ID: $BUILD_ID"
+          echo ""
+          echo "===== SOURCE INFO ====="
+          echo "Name     : $DISPLAY"
+          echo "Version  : $VERSION"
+          echo "Build    : $BUILD"
+          echo "Build ID : $BUILD_ID"
+          echo "======================="
 
           test "$DISPLAY" = "HTVANTIX"
           test "$VERSION" = "8.11"
@@ -123,7 +130,10 @@ jobs:
 
           grep -q \
             'PRODUCT_BUNDLE_IDENTIFIER = com.htblackshop.htvantix;' \
-            "$PBX"
+            "$PBX" || {
+              echo "ERROR: Wrong PRODUCT_BUNDLE_IDENTIFIER"
+              exit 1
+            }
 
       - name: Select Xcode
         shell: bash
@@ -133,19 +143,27 @@ jobs:
 
           xcodebuild -version
 
+      - name: Verify Xcode project
+        shell: bash
+        run: |
+          xcodebuild \
+            -project work/HTVANTIX.xcodeproj \
+            -list
+
       - name: Build HTVANTIX
         shell: bash
         run: |
           set +e
 
           rm -rf build
+          mkdir -p build
 
           xcodebuild \
             -project work/HTVANTIX.xcodeproj \
             -scheme HTVANTIX \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath build/DerivedData \
+            -derivedDataPath "$GITHUB_WORKSPACE/build/DerivedData" \
             PRODUCT_BUNDLE_IDENTIFIER="com.htblackshop.htvantix" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -171,7 +189,7 @@ jobs:
           set -e
 
           APP=$(find \
-            build/DerivedData/Build/Products/Release-iphoneos \
+            "$GITHUB_WORKSPACE/build/DerivedData/Build/Products/Release-iphoneos" \
             -maxdepth 1 \
             -type d \
             -name "*.app" \
@@ -184,7 +202,7 @@ jobs:
           fi
 
           echo "APP_PATH=$APP" >> "$GITHUB_ENV"
-          echo "APP=$APP"
+          echo "FOUND APP: $APP"
 
       - name: Verify built app
         if: success()
@@ -235,7 +253,7 @@ jobs:
 
           cp -R "$APP_PATH" Payload/
 
-          IPA="HTVANTIX_DEVICE_LOCK_8.11_68_V41_unsigned.ipa"
+          IPA="HTVANTIX_DOWNLOAD_ID_FIX_8.11_68_V41_unsigned.ipa"
 
           rm -f "$IPA"
 
@@ -249,7 +267,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-device-lock-build-log
+          name: HTVANTIX-download-id-fix-build-log
           path: build.log
           if-no-files-found: ignore
 
@@ -257,6 +275,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-DEVICE-LOCK-IPA
-          path: HTVANTIX_DEVICE_LOCK_8.11_68_V41_unsigned.ipa
+          name: HTVANTIX-DOWNLOAD-ID-FIX-IPA
+          path: HTVANTIX_DOWNLOAD_ID_FIX_8.11_68_V41_unsigned.ipa
           if-no-files-found: error
