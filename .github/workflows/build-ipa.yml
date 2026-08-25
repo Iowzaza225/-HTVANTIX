@@ -1,4 +1,4 @@
-name: Build HTV811 Debug Bundle Target IPA
+name: Build HTV811 APP ONLY IPA
 
 on:
   workflow_dispatch:
@@ -61,6 +61,7 @@ jobs:
 
           if [ -z "$PROJECT" ]; then
             echo "ERROR: Xcode project not found"
+            find "$GITHUB_WORKSPACE/extracted" -maxdepth 6 -print
             exit 1
           fi
 
@@ -234,16 +235,16 @@ jobs:
           cd "$GITHUB_WORKSPACE/ipa"
 
           zip -qry \
-            "$GITHUB_WORKSPACE/HTV811_DEBUG_BUNDLE_TARGET.ipa" \
+            "$GITHUB_WORKSPACE/HTV811_APP_ONLY.ipa" \
             Payload
 
-          ls -lh "$GITHUB_WORKSPACE/HTV811_DEBUG_BUNDLE_TARGET.ipa"
+          ls -lh "$GITHUB_WORKSPACE/HTV811_APP_ONLY.ipa"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTV811-DEBUG-BUNDLE-TARGET-IPA
-          path: HTV811_DEBUG_BUNDLE_TARGET.ipa
+          name: HTV811-APP-ONLY-IPA
+          path: HTV811_APP_ONLY.ipa
           if-no-files-found: error
           retention-days: 30
 
@@ -251,7 +252,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: HTV811-DEBUG-BUNDLE-TARGET-Build-Log
+          name: HTV811-APP-ONLY-Build-Log
           path: xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
