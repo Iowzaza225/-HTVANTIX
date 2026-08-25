@@ -1,118 +1,61 @@
-name: Build HTVANTIX V4 IPA
+name: Build HTVANTIX IPA
 
 on:
   workflow_dispatch:
 
-  push:
-    branches:
-      - main
-    paths:
-      - "*.zip"
-      - ".github/workflows/**"
-
 jobs:
   build:
-    name: build
     runs-on: macos-latest
 
     env:
       HTVANTIX_APP_TOKEN: ${{ secrets.HTVANTIX_APP_TOKEN }}
 
     steps:
-      # ==========================================
-      # 1. โหลดไฟล์จาก GitHub
-      # ==========================================
       - name: Checkout
         uses: actions/checkout@v4
 
-
-      # ==========================================
-      # 2. แสดง Xcode ที่กำลังใช้
-      # ==========================================
       - name: Xcode version
         run: |
           xcodebuild -version
           swift --version
 
-
-      # ==========================================
-      # 3. หา ZIP อัตโนมัติ + แตกไฟล์
-      # ไม่ล็อกชื่อ HTV811_OWNER_VISIBLE_CAPTURE_V2.zip
-      # ==========================================
       - name: Extract source
         run: |
           set -e
 
-          echo "======================================"
-          echo "Searching ZIP..."
-          echo "======================================"
-
-          ZIP_FILE=$(find "$GITHUB_WORKSPACE" \
-            -maxdepth 2 \
-            -type f \
-            -name "*.zip" \
-            | head -n 1)
+          ZIP_FILE=$(find "$GITHUB_WORKSPACE" -maxdepth 2 -type f -name "*.zip" | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: No ZIP file found"
-            echo ""
-            echo "Files in repository:"
-            find "$GITHUB_WORKSPACE" -maxdepth 2 -type f
             exit 1
           fi
 
-          echo "ZIP FOUND:"
-          echo "$ZIP_FILE"
+          echo "Found ZIP: $ZIP_FILE"
 
           rm -rf "$GITHUB_WORKSPACE/extracted"
           mkdir -p "$GITHUB_WORKSPACE/extracted"
 
-          unzip -q "$ZIP_FILE" \
-            -d "$GITHUB_WORKSPACE/extracted"
+          unzip -q "$ZIP_FILE" -d "$GITHUB_WORKSPACE/extracted"
 
-          echo ""
-          echo "======================================"
-          echo "Extract complete"
-          echo "======================================"
-
-          find "$GITHUB_WORKSPACE/extracted" \
-            -maxdepth 5 \
-            \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) \
-            -print
-
-
-      # ==========================================
-      # 4. หา Project อัตโนมัติ
-      # ==========================================
       - name: Find Xcode project
         run: |
           set -e
 
-          PROJECT=$(find "$GITHUB_WORKSPACE/extracted" \
-            -type d \
-            -name "*.xcodeproj" \
-            | head -n 1)
+          PROJECT=$(find "$GITHUB_WORKSPACE/extracted" -type d -name "*.xcodeproj" | head -n 1)
 
           if [ -z "$PROJECT" ]; then
             echo "ERROR: Xcode project not found"
-            find "$GITHUB_WORKSPACE/extracted" -maxdepth 5
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$PROJECT")
           PROJECT_NAME=$(basename "$PROJECT")
 
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
 
-          echo "PROJECT FOUND:"
-          echo "$PROJECT"
+          echo "Found project: $PROJECT"
 
-
-      # ==========================================
-      # 5. แสดง Scheme
-      # ==========================================
       - name: Show schemes
         run: |
           cd "$PROJECT_DIR"
@@ -121,83 +64,14 @@ jobs:
             -project "$PROJECT_NAME" \
             -list
 
-
-      # ==========================================
-      # 6. ตรวจ APP TOKEN
-      # ==========================================
       - name: Check app token
         run: |
           if [ -z "$HTVANTIX_APP_TOKEN" ]; then
             echo "WARNING: HTVANTIX_APP_TOKEN is empty"
-            echo "Add it at:"
-            echo "Settings -> Secrets and variables -> Actions"
-            echo "Secret name: HTVANTIX_APP_TOKEN"
           else
             echo "HTVANTIX_APP_TOKEN detected"
           fi
 
-
-      # ==========================================
-      # 7. Inject APP TOKEN ลง Info.plist
-      # ==========================================
-      - name: Inject app token
-        run: |
-          set -e
-
-          if [ -z "$HTVANTIX_APP_TOKEN" ]; then
-            echo "Skipping token injection because secret is empty"
-            exit 0
-          fi
-
-          PLIST=$(find "$PROJECT_DIR" \
-            -type f \
-            -name "Info.plist" \
-            | head -n 1)
-
-          if [ -z "$PLIST" ]; then
-            echo "Info.plist not found."
-            echo "Token will also be supplied as an Xcode build setting."
-            exit 0
-          fi
-
-          echo "Using Info.plist:"
-          echo "$PLIST"
-
-          /usr/libexec/PlistBuddy \
-            -c "Delete :HTVANTIX_APP_TOKEN" \
-            "$PLIST" 2>/dev/null || true
-
-          /usr/libexec/PlistBuddy \
-            -c "Add :HTVANTIX_APP_TOKEN string $HTVANTIX_APP_TOKEN" \
-            "$PLIST"
-
-          echo "App token injected"
-
-
-      # ==========================================
-      # 8. Clean
-      # ==========================================
-      - name: Clean
-        run: |
-          set -o pipefail
-
-          cd "$PROJECT_DIR"
-
-          xcodebuild \
-            -project "$PROJECT_NAME" \
-            -scheme HTVANTIX \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath "$GITHUB_WORKSPACE/build" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            HTVANTIX_APP_TOKEN="$HTVANTIX_APP_TOKEN" \
-            clean
-
-
-      # ==========================================
-      # 9. Build ตัวแอป
-      # ==========================================
       - name: Build
         run: |
           set -o pipefail
@@ -217,10 +91,6 @@ jobs:
             clean build \
             | tee "$GITHUB_WORKSPACE/xcodebuild.log"
 
-
-      # ==========================================
-      # 10. หา .app
-      # ==========================================
       - name: Find app
         run: |
           set -e
@@ -233,106 +103,37 @@ jobs:
 
           if [ -z "$APP_PATH" ]; then
             echo "ERROR: .app not found"
-            find "$GITHUB_WORKSPACE/build" -name "*.app" -print || true
             exit 1
           fi
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+          echo "Found app: $APP_PATH"
 
-          echo "APP FOUND:"
-          echo "$APP_PATH"
-
-
-      # ==========================================
-      # 11. แสดงข้อมูลตัวแอป
-      # ==========================================
-      - name: App information
-        run: |
-          echo "======================================"
-          echo "APP"
-          echo "======================================"
-
-          echo "$APP_PATH"
-
-          PLIST="$APP_PATH/Info.plist"
-
-          if [ -f "$PLIST" ]; then
-
-            echo ""
-            echo "Bundle ID:"
-            /usr/libexec/PlistBuddy \
-              -c "Print :CFBundleIdentifier" \
-              "$PLIST" || true
-
-            echo ""
-            echo "Version:"
-            /usr/libexec/PlistBuddy \
-              -c "Print :CFBundleShortVersionString" \
-              "$PLIST" || true
-
-            echo ""
-            echo "Build:"
-            /usr/libexec/PlistBuddy \
-              -c "Print :CFBundleVersion" \
-              "$PLIST" || true
-
-          fi
-
-
-      # ==========================================
-      # 12. สร้าง Payload
-      # ==========================================
-      - name: Create Payload
+      - name: Create IPA
         run: |
           set -e
 
           rm -rf "$GITHUB_WORKSPACE/ipa"
           mkdir -p "$GITHUB_WORKSPACE/ipa/Payload"
 
-          cp -R \
-            "$APP_PATH" \
-            "$GITHUB_WORKSPACE/ipa/Payload/"
-
-          echo "Payload created"
-
-
-      # ==========================================
-      # 13. สร้าง IPA
-      # ==========================================
-      - name: Create IPA
-        run: |
-          set -e
+          cp -R "$APP_PATH" "$GITHUB_WORKSPACE/ipa/Payload/"
 
           cd "$GITHUB_WORKSPACE/ipa"
 
           zip -qry \
-            "$GITHUB_WORKSPACE/HTVANTIX_V4.ipa" \
+            "$GITHUB_WORKSPACE/HTVANTIX.ipa" \
             Payload
 
-          echo ""
-          echo "======================================"
-          echo "IPA CREATED"
-          echo "======================================"
+          ls -lh "$GITHUB_WORKSPACE/HTVANTIX.ipa"
 
-          ls -lh "$GITHUB_WORKSPACE/HTVANTIX_V4.ipa"
-
-
-      # ==========================================
-      # 14. Upload IPA
-      # ==========================================
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V4-IPA
-          path: HTVANTIX_V4.ipa
+          name: HTVANTIX-IPA
+          path: HTVANTIX.ipa
           if-no-files-found: error
           retention-days: 30
 
-
-      # ==========================================
-      # 15. Upload Build Log
-      # ทำให้ดู Error ง่ายถ้าครั้งต่อไป Build ไม่ผ่าน
-      # ==========================================
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
