@@ -2,6 +2,12 @@ name: Build HTV811 IPA
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "HTV811_V4_KEYFIX_READY_NEW.zip"
+      - ".github/workflows/build.yml"
 
 jobs:
   build:
@@ -15,45 +21,47 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Xcode version
-        run: |
-          xcodebuild -version
-          swift --version
-
-      - name: Extract source
+      - name: Check ZIP
         run: |
           set -e
 
-          ZIP_FILE=$(find "$GITHUB_WORKSPACE" \
-            -maxdepth 2 \
-            -type f \
-            -name "*.zip" \
-            | head -n 1)
+          ZIP_FILE="$GITHUB_WORKSPACE/HTV811_V4_KEYFIX_READY_NEW.zip"
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: No ZIP file found"
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "❌ ZIP NOT FOUND"
+            echo "Expected: $ZIP_FILE"
+            ls -la "$GITHUB_WORKSPACE"
             exit 1
           fi
 
-          echo "Found ZIP: $ZIP_FILE"
+          echo "✅ ZIP FOUND"
+          ls -lh "$ZIP_FILE"
 
-          rm -rf "$GITHUB_WORKSPACE/extracted"
-          mkdir -p "$GITHUB_WORKSPACE/extracted"
-
-          unzip -q "$ZIP_FILE" \
-            -d "$GITHUB_WORKSPACE/extracted"
-
-      - name: Find Xcode project
+      - name: Extract ZIP
         run: |
           set -e
 
-          PROJECT=$(find "$GITHUB_WORKSPACE/extracted" \
+          rm -rf "$GITHUB_WORKSPACE/source"
+          mkdir -p "$GITHUB_WORKSPACE/source"
+
+          unzip -q \
+            "$GITHUB_WORKSPACE/HTV811_V4_KEYFIX_READY_NEW.zip" \
+            -d "$GITHUB_WORKSPACE/source"
+
+          echo "✅ EXTRACTED"
+
+      - name: Find Xcode Project
+        run: |
+          set -e
+
+          PROJECT=$(find "$GITHUB_WORKSPACE/source" \
             -type d \
             -name "*.xcodeproj" \
             | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "ERROR: Xcode project not found"
+            echo "❌ XCODE PROJECT NOT FOUND"
+            find "$GITHUB_WORKSPACE/source" -maxdepth 5 -print
             exit 1
           fi
 
@@ -63,9 +71,9 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
 
-          echo "Found project: $PROJECT"
+          echo "✅ PROJECT: $PROJECT"
 
-      - name: Detect scheme
+      - name: Detect Scheme
         run: |
           set -e
 
@@ -88,23 +96,23 @@ jobs:
             ')
 
           if [ -z "$SCHEME" ]; then
-            echo "ERROR: Scheme not found"
+            echo "❌ SCHEME NOT FOUND"
             exit 1
           fi
 
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          echo "Using scheme: $SCHEME"
+          echo "✅ SCHEME: $SCHEME"
 
-      - name: Check app token
+      - name: Check Token
         run: |
           if [ -z "$HTVANTIX_APP_TOKEN" ]; then
-            echo "ERROR: HTVANTIX_APP_TOKEN is empty"
+            echo "❌ HTVANTIX_APP_TOKEN NOT SET"
             exit 1
           fi
 
-          echo "APP TOKEN loaded"
+          echo "✅ TOKEN FOUND"
 
-      - name: Build
+      - name: Build Release
         run: |
           set -o pipefail
 
@@ -124,7 +132,7 @@ jobs:
             clean build \
             | tee "$GITHUB_WORKSPACE/xcodebuild.log"
 
-      - name: Find app
+      - name: Find Built APP
         run: |
           set -e
 
@@ -135,50 +143,29 @@ jobs:
             | head -n 1)
 
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: .app not found"
+            echo "❌ APP NOT FOUND"
             exit 1
           fi
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
-          echo "Found app: $APP_PATH"
+          echo "✅ APP: $APP_PATH"
 
-      - name: Fix final Info.plist
+      - name: Set Bundle ID
         run: |
           set -e
 
           PLIST="$APP_PATH/Info.plist"
 
           /usr/libexec/PlistBuddy \
-            -c "Delete :CFBundleIdentifier" \
-            "$PLIST" 2>/dev/null || true
-
-          /usr/libexec/PlistBuddy \
-            -c "Add :CFBundleIdentifier string $BUNDLE_ID" \
+            -c "Set :CFBundleIdentifier $BUNDLE_ID" \
             "$PLIST"
 
-          EXECUTABLE_NAME=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleExecutable" \
-            "$PLIST" 2>/dev/null || true)
-
-          if [ -z "$EXECUTABLE_NAME" ]; then
-            EXECUTABLE_NAME=$(basename "$APP_PATH" .app)
-
-            /usr/libexec/PlistBuddy \
-              -c "Add :CFBundleExecutable string $EXECUTABLE_NAME" \
-              "$PLIST"
-          fi
-
-          echo "Bundle ID:"
+          echo "✅ BUNDLE ID:"
           /usr/libexec/PlistBuddy \
             -c "Print :CFBundleIdentifier" \
             "$PLIST"
 
-          echo "Executable:"
-          /usr/libexec/PlistBuddy \
-            -c "Print :CFBundleExecutable" \
-            "$PLIST"
-
-      - name: Remove old signing
+      - name: Remove Old Signing
         run: |
           rm -rf "$APP_PATH/_CodeSignature"
           rm -f "$APP_PATH/embedded.mobileprovision"
@@ -187,7 +174,7 @@ jobs:
         run: |
           set -e
 
-          IPA_NAME="HTV811_${GITHUB_RUN_NUMBER}.ipa"
+          IPA_NAME="HTV811_KEYFIX_${GITHUB_RUN_NUMBER}.ipa"
 
           rm -rf "$GITHUB_WORKSPACE/ipa"
           mkdir -p "$GITHUB_WORKSPACE/ipa/Payload"
@@ -203,22 +190,22 @@ jobs:
 
           echo "IPA_NAME=$IPA_NAME" >> "$GITHUB_ENV"
 
-          echo "IPA created:"
+          echo "✅ IPA CREATED"
           ls -lh "$GITHUB_WORKSPACE/$IPA_NAME"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTV811-IPA-${{ github.run_number }}
+          name: HTV811-KEYFIX-${{ github.run_number }}
           path: ${{ env.IPA_NAME }}
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload build log
+      - name: Upload Build Log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: HTV811-Build-Log-${{ github.run_number }}
+          name: HTV811-BUILD-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
