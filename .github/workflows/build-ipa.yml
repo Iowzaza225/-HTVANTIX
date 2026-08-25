@@ -11,114 +11,175 @@ jobs:
     runs-on: macos-latest
 
     steps:
+      # 1. Checkout
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Find Bundle ZIP
+      # 2. หา ZIP อัตโนมัติ
+      - name: Find Source ZIP
+        shell: bash
         run: |
-          echo "=== ZIP FILES ==="
+          echo "=== Repository files ==="
+          ls -la
+
+          echo "=== ZIP files ==="
           find . -maxdepth 1 -type f -name "*.zip" -print
 
           ZIP_FILE="$(find . -maxdepth 1 -type f -name "*.zip" | head -1)"
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: ไม่พบไฟล์ ZIP"
+            echo "ERROR: ไม่พบไฟล์ ZIP ใน root repository"
             exit 1
           fi
 
           echo "Using ZIP: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-      - name: Extract Bundle
+      # 3. แตก ZIP
+      - name: Extract Source
+        shell: bash
         run: |
-          rm -rf bundle
-          mkdir -p bundle
+          rm -rf source
+          mkdir -p source
 
-          unzip -q "$ZIP_FILE" -d bundle
+          unzip -q "$ZIP_FILE" -d source
 
-          echo "=== EXTRACTED ==="
-          find bundle -maxdepth 3 -type d | sort | head -200
+          echo "=== Extracted files ==="
+          find source -maxdepth 4 -print | head -300
 
-      - name: Find Client Project
+      # 4. หา Xcode Project
+      - name: Find Xcode Project
+        shell: bash
         run: |
-          PROJECT="$(find bundle -type d -name "*.xcodeproj" | head -1)"
+          PROJECT="$(find source -type d -name "*.xcodeproj" | head -1)"
 
           if [ -z "$PROJECT" ]; then
             echo "ERROR: ไม่พบ .xcodeproj"
+            find source -maxdepth 6 -type f -print
             exit 1
           fi
 
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "Found project: $PROJECT"
+          echo "Found project:"
+          echo "$PROJECT"
 
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+
+      # 5. เลือก Xcode
       - name: Select Xcode
+        shell: bash
         run: |
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+          echo "=== Xcode ==="
           xcodebuild -version
 
+      # 6. หา Scheme
       - name: Detect Scheme
+        shell: bash
         run: |
-          echo "=== PROJECT INFO ==="
-          xcodebuild -project "$PROJECT" -list
+          echo "=== Project information ==="
+
+          xcodebuild \
+            -project "$PROJECT" \
+            -list
 
           SCHEME="$(xcodebuild \
             -project "$PROJECT" \
             -list 2>/dev/null |
-            awk '/Schemes:/{flag=1;next} flag && NF {
-              gsub(/^[ \t]+|[ \t]+$/, "");
-              print;
-              exit
-            }')"
+            awk '
+              /Schemes:/ {
+                found=1
+                next
+              }
+
+              found && NF {
+                gsub(/^[ \t]+|[ \t]+$/, "")
+                print
+                exit
+              }
+            ')"
 
           if [ -z "$SCHEME" ]; then
             echo "ERROR: ไม่พบ Scheme"
             exit 1
           fi
 
+          echo "Scheme: $SCHEME"
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          echo "Using scheme: $SCHEME"
 
+      # 7. Build
       - name: Build Client
+        shell: bash
         run: |
+          set -o pipefail
+
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath build \
+            -derivedDataPath "$GITHUB_WORKSPACE/build" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            build 2>&1 | tee xcodebuild.log
 
-      - name: Find App
+      # 8. หา .app
+      - name: Find Built App
+        shell: bash
         run: |
-          echo "=== BUILT APP ==="
-          find build -type d -name "*.app" -print
+          echo "=== APP FILES ==="
 
-      - name: Create IPA
-        run: |
-          APP="$(find build -type d -name "*.app" | head -1)"
+          find "$GITHUB_WORKSPACE/build" \
+            -type d \
+            -name "*.app" \
+            -print
+
+          APP="$(find "$GITHUB_WORKSPACE/build" \
+            -type d \
+            -name "*.app" \
+            | head -1)"
 
           if [ -z "$APP" ]; then
             echo "ERROR: ไม่พบ .app"
             exit 1
           fi
 
-          echo "Using app: $APP"
+          echo "Using APP:"
+          echo "$APP"
 
+          echo "APP=$APP" >> "$GITHUB_ENV"
+
+      # 9. สร้าง IPA
+      - name: Create IPA
+        shell: bash
+        run: |
           rm -rf Payload
           mkdir -p Payload
+
           cp -R "$APP" Payload/
 
-          /usr/bin/zip -qry HTVANTIX-unsigned.ipa Payload
+          /usr/bin/zip \
+            -qry \
+            HTVANTIX-unsigned.ipa \
+            Payload
 
-          echo "=== IPA CREATED ==="
+          echo "=== IPA ==="
           ls -lh HTVANTIX-unsigned.ipa
 
+      # 10. Upload IPA
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: HTVANTIX-IPA
           path: HTVANTIX-unsigned.ipa
           if-no-files-found: error
+
+      # ถ้า Build พัง ให้โหลด log ไปดูได้
+      - name: Upload Build Log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HTVANTIX-Build-Log
+          path: xcodebuild.log
+          if-no-files-found: ignore
