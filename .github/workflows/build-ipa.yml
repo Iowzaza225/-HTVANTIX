@@ -1,4 +1,4 @@
-name: Build HTVANTIX 8.11 IPA
+name: Build HTVANTIX Privacy IPA
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
         run: |
           set -e
 
-          SOURCE_ZIP="HTV811.zip"
+          SOURCE_ZIP="HTV811_PRIVACY_LINK_CLEAN.zip"
 
           if [ ! -f "$SOURCE_ZIP" ]; then
             echo "ERROR: Missing $SOURCE_ZIP"
@@ -39,7 +39,7 @@ jobs:
           }
 
           test -f "$ROOT/HTVANTIX/Info.plist" || {
-            echo "ERROR: Info.plist not found"
+            echo "ERROR: HTVANTIX/Info.plist not found"
             exit 1
           }
 
@@ -48,7 +48,7 @@ jobs:
           echo "===== SOURCE READY ====="
           echo "$ROOT"
 
-      - name: Fix Info.plist identity
+      - name: Fix app identity
         shell: bash
         run: |
           set -e
@@ -155,7 +155,7 @@ jobs:
             -scheme HTVANTIX \
             -list
 
-      - name: Build unsigned app
+      - name: Build HTVANTIX
         shell: bash
         run: |
           set +e
@@ -258,10 +258,9 @@ jobs:
 
           cp -R "$APP_PATH" Payload/
 
-          IPA="HTVANTIX_8.11_68_V41_unsigned.ipa"
+          IPA="HTVANTIX_PRIVACY_8.11_68_V41_unsigned.ipa"
 
           rm -f "$IPA"
-
           zip -qry "$IPA" Payload
 
           echo ""
@@ -273,7 +272,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-build-log
+          name: HTVANTIX-privacy-build-log
           path: build.log
           if-no-files-found: ignore
 
@@ -281,6 +280,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-811-IPA
-          path: HTVANTIX_8.11_68_V41_unsigned.ipa
+          name: HTVANTIX-PRIVACY-IPA
+          path: HTVANTIX_PRIVACY_8.11_68_V41_unsigned.ipa
           if-no-files-found: error
