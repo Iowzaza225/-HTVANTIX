@@ -1,4 +1,4 @@
-name: Build 3105 HTVANTIX IPA
+name: Build HTV811 IPA
 
 on:
   workflow_dispatch:
@@ -60,12 +60,14 @@ jobs:
 
           if [ -z "$PROJECT" ]; then
             echo "ERROR: Xcode project not found"
+            find "$GITHUB_WORKSPACE/extracted" -maxdepth 6 -print
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$PROJECT")
           PROJECT_NAME=$(basename "$PROJECT")
 
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
 
@@ -101,6 +103,32 @@ jobs:
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
           echo "Using scheme: $SCHEME"
 
+      - name: Inject app token
+        run: |
+          set -e
+
+          if [ -z "$HTVANTIX_APP_TOKEN" ]; then
+            echo "ERROR: HTVANTIX_APP_TOKEN secret is empty"
+            exit 1
+          fi
+
+          PLIST=$(find "$PROJECT_DIR" \
+            -type f \
+            -name "Info.plist" \
+            | head -n 1)
+
+          if [ -n "$PLIST" ]; then
+            echo "Using Info.plist: $PLIST"
+
+            /usr/libexec/PlistBuddy \
+              -c "Delete :HTVANTIXAppToken" \
+              "$PLIST" 2>/dev/null || true
+
+            /usr/libexec/PlistBuddy \
+              -c "Add :HTVANTIXAppToken string $HTVANTIX_APP_TOKEN" \
+              "$PLIST"
+          fi
+
       - name: Build
         run: |
           set -o pipefail
@@ -132,6 +160,7 @@ jobs:
 
           if [ -z "$APP_PATH" ]; then
             echo "ERROR: .app not found"
+            find "$GITHUB_WORKSPACE/build" -name "*.app" -print || true
             exit 1
           fi
 
@@ -161,7 +190,31 @@ jobs:
               "$PLIST"
           fi
 
-          echo "CFBundleExecutable: $EXECUTABLE_NAME"
+          echo "Executable: $EXECUTABLE_NAME"
+
+      - name: Show app information
+        run: |
+          PLIST="$APP_PATH/Info.plist"
+
+          echo "Bundle ID:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleIdentifier" \
+            "$PLIST" || true
+
+          echo "Version:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleShortVersionString" \
+            "$PLIST" || true
+
+          echo "Build:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleVersion" \
+            "$PLIST" || true
+
+          echo "Executable:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleExecutable" \
+            "$PLIST" || true
 
       - name: Remove old signing files
         run: |
@@ -181,16 +234,17 @@ jobs:
           cd "$GITHUB_WORKSPACE/ipa"
 
           zip -qry \
-            "$GITHUB_WORKSPACE/3105_HTVANTIX.ipa" \
+            "$GITHUB_WORKSPACE/HTV811.ipa" \
             Payload
 
-          ls -lh "$GITHUB_WORKSPACE/3105_HTVANTIX.ipa"
+          echo "IPA created:"
+          ls -lh "$GITHUB_WORKSPACE/HTV811.ipa"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: 3105-HTVANTIX-IPA
-          path: 3105_HTVANTIX.ipa
+          name: HTV811-IPA
+          path: HTV811.ipa
           if-no-files-found: error
           retention-days: 30
 
@@ -198,7 +252,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: 3105-HTVANTIX-Build-Log
+          name: HTV811-Build-Log
           path: xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
