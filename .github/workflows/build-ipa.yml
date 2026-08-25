@@ -1,256 +1,59 @@
-name: Build HTV811 Test IPA
+name: Build 3105 IPA
 
 on:
   workflow_dispatch:
-
   push:
     branches:
       - main
-    paths:
-      - "*.zip"
-      - ".github/workflows/**"
 
 jobs:
   build:
     runs-on: macos-latest
 
-    env:
-      HTVANTIX_APP_TOKEN: ${{ secrets.HTVANTIX_APP_TOKEN }}
-      BUNDLE_ID: com.apple.mobile.MobileHouseArrest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 20
 
-      - name: Find latest ZIP
+      - name: Show project files
         run: |
-          set -e
+          pwd
+          ls -la
 
-          ZIP_REL=$(git diff-tree \
-            --no-commit-id \
-            --name-only \
-            -r "$GITHUB_SHA" \
-            | grep -E '\.zip$' \
-            | head -n 1 || true)
-
-          if [ -z "$ZIP_REL" ]; then
-            ZIP_REL=$(git log \
-              --name-only \
-              --pretty=format: \
-              -- "*.zip" \
-              | grep -E '\.zip$' \
-              | head -n 1 || true)
-          fi
-
-          if [ -z "$ZIP_REL" ]; then
-            echo "ERROR: ZIP not found"
-            exit 1
-          fi
-
-          ZIP_FILE="$GITHUB_WORKSPACE/$ZIP_REL"
-
-          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-
-          echo "=============================="
-          echo "BUILDING ZIP:"
-          echo "$ZIP_REL"
-          echo "=============================="
-
-      - name: Extract source
+      - name: Install Theos
         run: |
-          set -e
-
-          rm -rf "$GITHUB_WORKSPACE/source"
-          mkdir -p "$GITHUB_WORKSPACE/source"
-
-          unzip -q "$ZIP_FILE" \
-            -d "$GITHUB_WORKSPACE/source"
-
-      - name: Find Xcode project
-        run: |
-          set -e
-
-          PROJECT=$(find "$GITHUB_WORKSPACE/source" \
-            -type d \
-            -name "*.xcodeproj" \
-            | head -n 1)
-
-          if [ -z "$PROJECT" ]; then
-            echo "ERROR: Xcode project not found"
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$PROJECT")
-          PROJECT_NAME=$(basename "$PROJECT")
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
-
-          echo "PROJECT: $PROJECT"
-
-      - name: Detect scheme
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          xcodebuild \
-            -project "$PROJECT_NAME" \
-            -list
-
-          SCHEME=$(xcodebuild \
-            -project "$PROJECT_NAME" \
-            -list \
-            | awk '
-              /Schemes:/ {found=1; next}
-              found && NF {
-                gsub(/^[ \t]+|[ \t]+$/, "")
-                print
-                exit
-              }
-            ')
-
-          if [ -z "$SCHEME" ]; then
-            echo "ERROR: Scheme not found"
-            exit 1
-          fi
-
-          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          echo "SCHEME: $SCHEME"
-
-      - name: Check App Token
-        run: |
-          set -e
-
-          if [ -z "$HTVANTIX_APP_TOKEN" ]; then
-            echo "ERROR: HTVANTIX_APP_TOKEN is empty"
-            exit 1
-          fi
-
-          echo "APP TOKEN FOUND"
+          brew install make ldid
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
       - name: Build
         run: |
-          set -o pipefail
+          export THEOS=$HOME/theos
+          export PATH="$THEOS/bin:$PATH"
 
-          cd "$PROJECT_DIR"
-
-          xcodebuild \
-            -project "$PROJECT_NAME" \
-            -scheme "$SCHEME" \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath "$GITHUB_WORKSPACE/build" \
-            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-            HTVANTIX_APP_TOKEN="$HTVANTIX_APP_TOKEN" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            clean build \
-            | tee "$GITHUB_WORKSPACE/xcodebuild.log"
-
-      - name: Find APP
-        run: |
-          set -e
-
-          APP_PATH=$(find "$GITHUB_WORKSPACE/build" \
-            -type d \
-            -name "*.app" \
-            -path "*Release-iphoneos*" \
-            | head -n 1)
-
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: APP not found"
-            exit 1
-          fi
-
-          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
-          echo "APP: $APP_PATH"
-
-      - name: Inject Config
-        run: |
-          set -e
-
-          PLIST="$APP_PATH/Info.plist"
-
-          if [ ! -f "$PLIST" ]; then
-            echo "ERROR: Info.plist not found"
-            exit 1
-          fi
-
-          /usr/libexec/PlistBuddy \
-            -c "Delete :CFBundleIdentifier" \
-            "$PLIST" 2>/dev/null || true
-
-          /usr/libexec/PlistBuddy \
-            -c "Add :CFBundleIdentifier string $BUNDLE_ID" \
-            "$PLIST"
-
-          /usr/libexec/PlistBuddy \
-            -c "Delete :HTVANTIXAppToken" \
-            "$PLIST" 2>/dev/null || true
-
-          /usr/libexec/PlistBuddy \
-            -c "Add :HTVANTIXAppToken string $HTVANTIX_APP_TOKEN" \
-            "$PLIST"
-
-          EXECUTABLE_NAME=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleExecutable" \
-            "$PLIST" 2>/dev/null || true)
-
-          if [ -z "$EXECUTABLE_NAME" ]; then
-            EXECUTABLE_NAME=$(basename "$APP_PATH" .app)
-
-            /usr/libexec/PlistBuddy \
-              -c "Add :CFBundleExecutable string $EXECUTABLE_NAME" \
-              "$PLIST"
-          fi
-
-          echo "CONFIG INJECTED"
-
-      - name: Remove old signing
-        run: |
-          rm -rf "$APP_PATH/_CodeSignature"
-          rm -f "$APP_PATH/embedded.mobileprovision"
+          make clean
+          make -j2
 
       - name: Create IPA
         run: |
-          set -e
+          APP=$(find . -type d -name "*.app" | head -1)
 
-          IPA_NAME="HTVANTIX_TEST_${GITHUB_RUN_NUMBER}.ipa"
+          if [ -z "$APP" ]; then
+            echo "ERROR: ไม่พบ .app"
+            exit 1
+          fi
 
-          rm -rf "$GITHUB_WORKSPACE/Payload"
-          mkdir -p "$GITHUB_WORKSPACE/Payload"
+          echo "Found: $APP"
 
-          cp -R "$APP_PATH" \
-            "$GITHUB_WORKSPACE/Payload/"
+          rm -rf Payload
+          mkdir Payload
+          cp -R "$APP" Payload/
 
-          cd "$GITHUB_WORKSPACE"
+          zip -qry 3105-unsigned.ipa Payload
 
-          zip -qry \
-            "$IPA_NAME" \
-            Payload
-
-          echo "IPA_NAME=$IPA_NAME" >> "$GITHUB_ENV"
-
-          echo "IPA CREATED:"
-          echo "$IPA_NAME"
+          ls -lh 3105-unsigned.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-TEST-${{ github.run_number }}
-          path: ${{ env.IPA_NAME }}
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: HTVANTIX-TEST-LOG-${{ github.run_number }}
-          path: xcodebuild.log
-          if-no-files-found: ignore
-          retention-days: 7
+          name: 3105-IPA
+          path: 3105-unsigned.ipa
