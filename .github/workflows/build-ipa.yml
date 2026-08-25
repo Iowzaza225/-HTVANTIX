@@ -11,31 +11,25 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      # 1. Checkout
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. หา ZIP อัตโนมัติ
       - name: Find Source ZIP
         shell: bash
         run: |
-          echo "=== Repository files ==="
-          ls -la
+          ZIP_FILE="./HTVANTIX_KEY_GATE_DIRECT_SESSION_PATCH.zip"
 
-          echo "=== ZIP files ==="
+          echo "=== ZIP FILES IN REPO ==="
           find . -maxdepth 1 -type f -name "*.zip" -print
 
-          ZIP_FILE="$(find . -maxdepth 1 -type f -name "*.zip" | head -1)"
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: ไม่พบไฟล์ ZIP ใน root repository"
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ERROR: ไม่พบไฟล์ $ZIP_FILE"
             exit 1
           fi
 
           echo "Using ZIP: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-      # 3. แตก ZIP
       - name: Extract Source
         shell: bash
         run: |
@@ -44,10 +38,9 @@ jobs:
 
           unzip -q "$ZIP_FILE" -d source
 
-          echo "=== Extracted files ==="
-          find source -maxdepth 4 -print | head -300
+          echo "=== EXTRACTED PROJECTS ==="
+          find source -type d -name "*.xcodeproj" -print
 
-      # 4. หา Xcode Project
       - name: Find Xcode Project
         shell: bash
         run: |
@@ -55,29 +48,22 @@ jobs:
 
           if [ -z "$PROJECT" ]; then
             echo "ERROR: ไม่พบ .xcodeproj"
-            find source -maxdepth 6 -type f -print
             exit 1
           fi
 
-          echo "Found project:"
-          echo "$PROJECT"
-
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+          echo "Found project: $PROJECT"
 
-      # 5. เลือก Xcode
       - name: Select Xcode
         shell: bash
         run: |
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-
-          echo "=== Xcode ==="
           xcodebuild -version
 
-      # 6. หา Scheme
       - name: Detect Scheme
         shell: bash
         run: |
-          echo "=== Project information ==="
+          echo "=== PROJECT INFO ==="
 
           xcodebuild \
             -project "$PROJECT" \
@@ -86,32 +72,29 @@ jobs:
           SCHEME="$(xcodebuild \
             -project "$PROJECT" \
             -list 2>/dev/null |
-            awk '
-              /Schemes:/ {
-                found=1
-                next
-              }
-
-              found && NF {
-                gsub(/^[ \t]+|[ \t]+$/, "")
-                print
-                exit
-              }
-            ')"
+            awk '/Schemes:/{flag=1;next} flag && NF {
+              gsub(/^[ \t]+|[ \t]+$/, "");
+              print;
+              exit
+            }')"
 
           if [ -z "$SCHEME" ]; then
             echo "ERROR: ไม่พบ Scheme"
             exit 1
           fi
 
-          echo "Scheme: $SCHEME"
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+          echo "Using scheme: $SCHEME"
 
-      # 7. Build
       - name: Build Client
         shell: bash
         run: |
           set -o pipefail
+
+          echo "=== BUILDING LATEST KEY-GATE SOURCE ==="
+          echo "Project: $PROJECT"
+          echo "Scheme: $SCHEME"
+          echo "ZIP: $ZIP_FILE"
 
           xcodebuild \
             -project "$PROJECT" \
@@ -124,16 +107,10 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build 2>&1 | tee xcodebuild.log
 
-      # 8. หา .app
       - name: Find Built App
         shell: bash
         run: |
-          echo "=== APP FILES ==="
-
-          find "$GITHUB_WORKSPACE/build" \
-            -type d \
-            -name "*.app" \
-            -print
+          echo "=== BUILT APP ==="
 
           APP="$(find "$GITHUB_WORKSPACE/build" \
             -type d \
@@ -145,12 +122,24 @@ jobs:
             exit 1
           fi
 
-          echo "Using APP:"
-          echo "$APP"
-
           echo "APP=$APP" >> "$GITHUB_ENV"
+          echo "Using app: $APP"
 
-      # 9. สร้าง IPA
+      - name: Verify Key Gate Source
+        shell: bash
+        run: |
+          echo "=== VERIFY SOURCE ==="
+
+          if grep -R "sessionToken" source -n | head -20; then
+            echo "พบ sessionToken ใน source"
+          else
+            echo "WARNING: ไม่พบ sessionToken"
+          fi
+
+          if grep -R "License" source/ThreeOneOSFive source/*/ThreeOneOSFive -n 2>/dev/null | head -20; then
+            echo "พบ License flow"
+          fi
+
       - name: Create IPA
         shell: bash
         run: |
@@ -161,21 +150,19 @@ jobs:
 
           /usr/bin/zip \
             -qry \
-            HTVANTIX-unsigned.ipa \
+            HTVANTIX-KEY-GATE-unsigned.ipa \
             Payload
 
-          echo "=== IPA ==="
-          ls -lh HTVANTIX-unsigned.ipa
+          echo "=== IPA CREATED ==="
+          ls -lh HTVANTIX-KEY-GATE-unsigned.ipa
 
-      # 10. Upload IPA
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-IPA
-          path: HTVANTIX-unsigned.ipa
+          name: HTVANTIX-KEY-GATE-IPA
+          path: HTVANTIX-KEY-GATE-unsigned.ipa
           if-no-files-found: error
 
-      # ถ้า Build พัง ให้โหลด log ไปดูได้
       - name: Upload Build Log
         if: failure()
         uses: actions/upload-artifact@v4
