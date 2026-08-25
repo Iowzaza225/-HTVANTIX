@@ -3,6 +3,13 @@ name: Build HTV811 Full UI IPA
 on:
   workflow_dispatch:
 
+  push:
+    branches:
+      - main
+    paths:
+      - "*.zip"
+      - ".github/workflows/**"
+
 jobs:
   build:
     runs-on: macos-latest
@@ -14,24 +21,42 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
 
-      - name: Find ZIP
+      - name: Find ZIP from current commit
         run: |
           set -e
 
-          ZIP_FILE=$(find "$GITHUB_WORKSPACE" \
-            -maxdepth 2 \
-            -type f \
-            -name "HTV811_FULL_UI_SYSTEM_RESTORED_PATCH_UNTOUCHED.zip" \
-            | head -n 1)
+          ZIP_REL=$(git diff-tree \
+            --no-commit-id \
+            --name-only \
+            -r "$GITHUB_SHA" \
+            | grep -E '\.zip$' \
+            | head -n 1 || true)
 
-          if [ -z "$ZIP_FILE" ]; then
+          if [ -z "$ZIP_REL" ]; then
+            ZIP_REL=$(git log \
+              --name-only \
+              --pretty=format: \
+              -- "*.zip" \
+              | grep -E '\.zip$' \
+              | head -n 1 || true)
+          fi
+
+          if [ -z "$ZIP_REL" ]; then
             echo "ERROR: ZIP not found"
             exit 1
           fi
 
+          ZIP_FILE="$GITHUB_WORKSPACE/$ZIP_REL"
+
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-          echo "BUILDING: $ZIP_FILE"
+
+          echo "=============================="
+          echo "BUILDING ZIP:"
+          echo "$ZIP_REL"
+          echo "=============================="
 
       - name: Extract Source
         run: |
@@ -63,11 +88,17 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
 
+          echo "PROJECT: $PROJECT"
+
       - name: Detect Scheme
         run: |
           set -e
 
           cd "$PROJECT_DIR"
+
+          xcodebuild \
+            -project "$PROJECT_NAME" \
+            -list
 
           SCHEME=$(xcodebuild \
             -project "$PROJECT_NAME" \
@@ -87,6 +118,7 @@ jobs:
           fi
 
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+          echo "SCHEME: $SCHEME"
 
       - name: Check App Token
         run: |
@@ -96,6 +128,8 @@ jobs:
             echo "ERROR: HTVANTIX_APP_TOKEN is empty"
             exit 1
           fi
+
+          echo "APP TOKEN FOUND"
 
       - name: Build
         run: |
@@ -110,10 +144,10 @@ jobs:
             -sdk iphoneos \
             -derivedDataPath "$GITHUB_WORKSPACE/build" \
             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+            HTVANTIX_APP_TOKEN="$HTVANTIX_APP_TOKEN" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            HTVANTIX_APP_TOKEN="$HTVANTIX_APP_TOKEN" \
             clean build \
             | tee "$GITHUB_WORKSPACE/xcodebuild.log"
 
@@ -133,6 +167,7 @@ jobs:
           fi
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+          echo "APP: $APP_PATH"
 
       - name: Inject Config
         run: |
@@ -195,8 +230,8 @@ jobs:
 
           echo "IPA_NAME=$IPA_NAME" >> "$GITHUB_ENV"
 
-          echo "IPA CREATED: $IPA_NAME"
-          ls -lh "$IPA_NAME"
+          echo "IPA CREATED:"
+          echo "$IPA_NAME"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
