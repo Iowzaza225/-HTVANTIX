@@ -24,25 +24,16 @@ jobs:
         with:
           fetch-depth: 20
 
-      # ==============================
-      # CHECK TOKEN
-      # ==============================
-
       - name: Check App Token
         run: |
           set -e
 
           if [ -z "$HTVANTIX_APP_TOKEN" ]; then
-            echo "ERROR: HTVANTIX_APP_TOKEN is EMPTY"
+            echo "ERROR: HTVANTIX_APP_TOKEN is empty"
             exit 1
           fi
 
-          echo "TOKEN CONFIGURED"
-          echo "TOKEN LENGTH: ${#HTVANTIX_APP_TOKEN}"
-
-      # ==============================
-      # FIND NEWEST ZIP
-      # ==============================
+          echo "APP TOKEN FOUND"
 
       - name: Find Latest ZIP
         run: |
@@ -56,38 +47,30 @@ jobs:
             | head -n 1 || true)
 
           if [ -z "$ZIP_REL" ]; then
-
             ZIP_REL=$(git log \
               --name-only \
               --pretty=format: \
               -- "*.zip" \
               | grep -E '\.zip$' \
               | head -n 1 || true)
-
           fi
 
           if [ -z "$ZIP_REL" ]; then
-            echo "ERROR: ZIP NOT FOUND"
+            echo "ERROR: ZIP not found"
             exit 1
           fi
 
           ZIP_FILE="$GITHUB_WORKSPACE/$ZIP_REL"
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: ZIP FILE DOES NOT EXIST"
+            echo "ERROR: ZIP does not exist"
             exit 1
           fi
 
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-          echo "=============================="
-          echo "BUILD SOURCE:"
+          echo "BUILDING:"
           echo "$ZIP_REL"
-          echo "=============================="
-
-      # ==============================
-      # EXTRACT
-      # ==============================
 
       - name: Extract Source
         run: |
@@ -99,10 +82,6 @@ jobs:
           unzip -q "$ZIP_FILE" \
             -d "$GITHUB_WORKSPACE/source"
 
-      # ==============================
-      # FIND PROJECT
-      # ==============================
-
       - name: Find Xcode Project
         run: |
           set -e
@@ -113,7 +92,7 @@ jobs:
             | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "ERROR: XCODE PROJECT NOT FOUND"
+            echo "ERROR: Xcode project not found"
             exit 1
           fi
 
@@ -123,17 +102,18 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
 
-          echo "PROJECT: $PROJECT"
-
-      # ==============================
-      # DETECT SCHEME
-      # ==============================
+          echo "PROJECT:"
+          echo "$PROJECT"
 
       - name: Detect Scheme
         run: |
           set -e
 
           cd "$PROJECT_DIR"
+
+          xcodebuild \
+            -project "$PROJECT_NAME" \
+            -list
 
           SCHEME=$(xcodebuild \
             -project "$PROJECT_NAME" \
@@ -148,17 +128,12 @@ jobs:
             ')
 
           if [ -z "$SCHEME" ]; then
-            echo "ERROR: SCHEME NOT FOUND"
+            echo "ERROR: Scheme not found"
             exit 1
           fi
 
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-
           echo "SCHEME: $SCHEME"
-
-      # ==============================
-      # BUILD
-      # ==============================
 
       - name: Build Release
         run: |
@@ -180,10 +155,6 @@ jobs:
             clean build \
             | tee "$GITHUB_WORKSPACE/xcodebuild.log"
 
-      # ==============================
-      # FIND APP
-      # ==============================
-
       - name: Find Built APP
         run: |
           set -e
@@ -195,17 +166,14 @@ jobs:
             | head -n 1)
 
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: APP NOT FOUND"
+            echo "ERROR: .app not found"
             exit 1
           fi
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
 
-          echo "APP: $APP_PATH"
-
-      # ==============================
-      # INJECT CONFIG
-      # ==============================
+          echo "APP:"
+          echo "$APP_PATH"
 
       - name: Inject Client Configuration
         run: |
@@ -214,11 +182,9 @@ jobs:
           PLIST="$APP_PATH/Info.plist"
 
           if [ ! -f "$PLIST" ]; then
-            echo "ERROR: Info.plist NOT FOUND"
+            echo "ERROR: Info.plist not found"
             exit 1
           fi
-
-          # Bundle ID
 
           /usr/libexec/PlistBuddy \
             -c "Delete :CFBundleIdentifier" \
@@ -228,40 +194,44 @@ jobs:
             -c "Add :CFBundleIdentifier string $BUNDLE_ID" \
             "$PLIST"
 
-          # HTVANTIX App Token
-
           /usr/libexec/PlistBuddy \
-            -c "Delete :HTVANTIX_APP_TOKEN" \
+            -c "Delete :HTVANTIXAppToken" \
             "$PLIST" 2>/dev/null || true
 
           /usr/libexec/PlistBuddy \
-            -c "Add :HTVANTIX_APP_TOKEN string $HTVANTIX_APP_TOKEN" \
+            -c "Add :HTVANTIXAppToken string $HTVANTIX_APP_TOKEN" \
             "$PLIST"
 
-          echo "=============================="
-          echo "CLIENT CONFIG INJECTED"
-          echo "=============================="
+          EXECUTABLE_NAME=$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleExecutable" \
+            "$PLIST" 2>/dev/null || true)
 
-          echo "Bundle:"
+          if [ -z "$EXECUTABLE_NAME" ]; then
+            EXECUTABLE_NAME=$(basename "$APP_PATH" .app)
+
+            /usr/libexec/PlistBuddy \
+              -c "Add :CFBundleExecutable string $EXECUTABLE_NAME" \
+              "$PLIST"
+          fi
+
+          if /usr/libexec/PlistBuddy \
+            -c "Print :HTVANTIXAppToken" \
+            "$PLIST" >/dev/null 2>&1; then
+            echo "CLIENT TOKEN INJECTED"
+          else
+            echo "ERROR: CLIENT TOKEN INJECTION FAILED"
+            exit 1
+          fi
+
+          echo "Bundle ID:"
           /usr/libexec/PlistBuddy \
             -c "Print :CFBundleIdentifier" \
             "$PLIST"
 
-          TOKEN_CHECK=$(/usr/libexec/PlistBuddy \
-            -c "Print :HTVANTIX_APP_TOKEN" \
-            "$PLIST")
-
-          if [ -z "$TOKEN_CHECK" ]; then
-            echo "ERROR: TOKEN NOT IN Info.plist"
-            exit 1
-          fi
-
-          echo "TOKEN PRESENT"
-          echo "TOKEN LENGTH: ${#TOKEN_CHECK}"
-
-      # ==============================
-      # REMOVE OLD SIGNATURE
-      # ==============================
+          echo "Executable:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleExecutable" \
+            "$PLIST"
 
       - name: Remove Old Signing
         run: |
@@ -270,15 +240,11 @@ jobs:
           rm -rf "$APP_PATH/_CodeSignature"
           rm -f "$APP_PATH/embedded.mobileprovision"
 
-      # ==============================
-      # CREATE IPA
-      # ==============================
-
       - name: Create IPA
         run: |
           set -e
 
-          IPA_NAME="HTVANTIX_CONFIG_${GITHUB_RUN_NUMBER}.ipa"
+          IPA_NAME="HTVANTIX_CONFIGFIX_${GITHUB_RUN_NUMBER}.ipa"
 
           rm -rf "$GITHUB_WORKSPACE/Payload"
           mkdir -p "$GITHUB_WORKSPACE/Payload"
@@ -294,28 +260,18 @@ jobs:
 
           echo "IPA_NAME=$IPA_NAME" >> "$GITHUB_ENV"
 
-          echo "=============================="
           echo "IPA CREATED:"
           echo "$IPA_NAME"
-          echo "=============================="
 
           ls -lh "$IPA_NAME"
-
-      # ==============================
-      # UPLOAD IPA
-      # ==============================
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-CONFIG-${{ github.run_number }}
+          name: HTVANTIX-CONFIGFIX-${{ github.run_number }}
           path: ${{ env.IPA_NAME }}
           if-no-files-found: error
           retention-days: 30
-
-      # ==============================
-      # BUILD LOG
-      # ==============================
 
       - name: Upload Build Log
         if: always()
