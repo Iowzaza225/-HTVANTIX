@@ -1,4 +1,4 @@
-name: Build HTV811 V4 IPA
+name: Build HTV811 IPA
 
 on:
   workflow_dispatch:
@@ -15,46 +15,45 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show Xcode
+      - name: Xcode version
         run: |
           xcodebuild -version
           swift --version
 
-      - name: Find and Extract ZIP
+      - name: Extract source
         run: |
           set -e
 
           ZIP_FILE=$(find "$GITHUB_WORKSPACE" \
+            -maxdepth 2 \
             -type f \
-            -name "HTV811_APP_ONLY_V4_KEY_SESSION_FIXED.zip" \
+            -name "*.zip" \
             | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "❌ ZIP not found"
-            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f
+            echo "ERROR: No ZIP file found"
             exit 1
           fi
 
-          echo "✅ ZIP: $ZIP_FILE"
+          echo "Found ZIP: $ZIP_FILE"
 
-          rm -rf "$GITHUB_WORKSPACE/source"
-          mkdir -p "$GITHUB_WORKSPACE/source"
+          rm -rf "$GITHUB_WORKSPACE/extracted"
+          mkdir -p "$GITHUB_WORKSPACE/extracted"
 
           unzip -q "$ZIP_FILE" \
-            -d "$GITHUB_WORKSPACE/source"
+            -d "$GITHUB_WORKSPACE/extracted"
 
-      - name: Find Xcode Project
+      - name: Find Xcode project
         run: |
           set -e
 
-          PROJECT=$(find "$GITHUB_WORKSPACE/source" \
+          PROJECT=$(find "$GITHUB_WORKSPACE/extracted" \
             -type d \
             -name "*.xcodeproj" \
             | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "❌ .xcodeproj not found"
-            find "$GITHUB_WORKSPACE/source" -maxdepth 6 -print
+            echo "ERROR: Xcode project not found"
             exit 1
           fi
 
@@ -64,17 +63,11 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
 
-          echo "✅ Project: $PROJECT"
-
-      - name: Detect Scheme
+      - name: Detect scheme
         run: |
           set -e
 
           cd "$PROJECT_DIR"
-
-          xcodebuild \
-            -project "$PROJECT_NAME" \
-            -list
 
           SCHEME=$(xcodebuild \
             -project "$PROJECT_NAME" \
@@ -89,23 +82,21 @@ jobs:
             ')
 
           if [ -z "$SCHEME" ]; then
-            echo "❌ Scheme not found"
+            echo "ERROR: Scheme not found"
             exit 1
           fi
 
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          echo "✅ Scheme: $SCHEME"
+          echo "Using scheme: $SCHEME"
 
-      - name: Check App Token
+      - name: Check app token
         run: |
           if [ -z "$HTVANTIX_APP_TOKEN" ]; then
-            echo "❌ HTVANTIX_APP_TOKEN missing"
+            echo "ERROR: HTVANTIX_APP_TOKEN is empty"
             exit 1
           fi
 
-          echo "✅ APP TOKEN loaded"
-
-      - name: Build Release
+      - name: Build
         run: |
           set -o pipefail
 
@@ -125,7 +116,7 @@ jobs:
             clean build \
             | tee "$GITHUB_WORKSPACE/xcodebuild.log"
 
-      - name: Find Built APP
+      - name: Find app
         run: |
           set -e
 
@@ -136,34 +127,44 @@ jobs:
             | head -n 1)
 
           if [ -z "$APP_PATH" ]; then
-            echo "❌ APP not found"
+            echo "ERROR: .app not found"
             exit 1
           fi
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
-          echo "✅ APP: $APP_PATH"
 
-      - name: Verify Bundle ID
+      - name: Fix final Info.plist
         run: |
           set -e
 
           PLIST="$APP_PATH/Info.plist"
 
           /usr/libexec/PlistBuddy \
-            -c "Set :CFBundleIdentifier $BUNDLE_ID" \
-            "$PLIST"
+            -c "Delete :CFBundleIdentifier" \
+            "$PLIST" 2>/dev/null || true
 
-          echo "Bundle ID:"
           /usr/libexec/PlistBuddy \
-            -c "Print :CFBundleIdentifier" \
+            -c "Add :CFBundleIdentifier string $BUNDLE_ID" \
             "$PLIST"
 
-      - name: Remove Signing
+          EXECUTABLE_NAME=$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleExecutable" \
+            "$PLIST" 2>/dev/null || true)
+
+          if [ -z "$EXECUTABLE_NAME" ]; then
+            EXECUTABLE_NAME=$(basename "$APP_PATH" .app)
+
+            /usr/libexec/PlistBuddy \
+              -c "Add :CFBundleExecutable string $EXECUTABLE_NAME" \
+              "$PLIST"
+          fi
+
+      - name: Remove old signing
         run: |
           rm -rf "$APP_PATH/_CodeSignature"
           rm -f "$APP_PATH/embedded.mobileprovision"
 
-      - name: Create Unsigned IPA
+      - name: Create IPA
         run: |
           set -e
 
@@ -176,25 +177,22 @@ jobs:
           cd "$GITHUB_WORKSPACE/ipa"
 
           zip -qry \
-            "$GITHUB_WORKSPACE/HTV811_V4_KEY_FIXED_unsigned.ipa" \
+            "$GITHUB_WORKSPACE/HTV811.ipa" \
             Payload
-
-          echo "✅ IPA CREATED"
-          ls -lh "$GITHUB_WORKSPACE/HTV811_V4_KEY_FIXED_unsigned.ipa"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTV811-V4-KEY-FIXED-IPA
-          path: HTV811_V4_KEY_FIXED_unsigned.ipa
+          name: HTV811-IPA
+          path: HTV811.ipa
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload Build Log
+      - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: HTV811-V4-BUILD-LOG
+          name: HTV811-Build-Log
           path: xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
