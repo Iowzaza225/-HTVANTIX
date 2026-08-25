@@ -3,6 +3,13 @@ name: Build 3105 HTVANTIX IPA
 on:
   workflow_dispatch:
 
+  push:
+    branches:
+      - main
+    paths:
+      - "*.zip"
+      - ".github/workflows/**"
+
 jobs:
   build:
     runs-on: macos-latest
@@ -53,14 +60,12 @@ jobs:
 
           if [ -z "$PROJECT" ]; then
             echo "ERROR: Xcode project not found"
-            find "$GITHUB_WORKSPACE/extracted" -maxdepth 5 -print
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$PROJECT")
           PROJECT_NAME=$(basename "$PROJECT")
 
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
 
@@ -72,7 +77,6 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          echo "Available schemes:"
           xcodebuild \
             -project "$PROJECT_NAME" \
             -list
@@ -82,7 +86,11 @@ jobs:
             -list \
             | awk '
               /Schemes:/ {found=1; next}
-              found && NF {gsub(/^[ \t]+|[ \t]+$/, ""); print; exit}
+              found && NF {
+                gsub(/^[ \t]+|[ \t]+$/, "")
+                print
+                exit
+              }
             ')
 
           if [ -z "$SCHEME" ]; then
@@ -92,14 +100,6 @@ jobs:
 
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
           echo "Using scheme: $SCHEME"
-
-      - name: Check app token
-        run: |
-          if [ -z "$HTVANTIX_APP_TOKEN" ]; then
-            echo "WARNING: HTVANTIX_APP_TOKEN is empty"
-          else
-            echo "HTVANTIX_APP_TOKEN detected"
-          fi
 
       - name: Build
         run: |
@@ -132,7 +132,6 @@ jobs:
 
           if [ -z "$APP_PATH" ]; then
             echo "ERROR: .app not found"
-            find "$GITHUB_WORKSPACE/build" -name "*.app" -print || true
             exit 1
           fi
 
@@ -164,30 +163,6 @@ jobs:
 
           echo "CFBundleExecutable: $EXECUTABLE_NAME"
 
-      - name: App information
-        run: |
-          PLIST="$APP_PATH/Info.plist"
-
-          echo "Bundle ID:"
-          /usr/libexec/PlistBuddy \
-            -c "Print :CFBundleIdentifier" \
-            "$PLIST" || true
-
-          echo "Version:"
-          /usr/libexec/PlistBuddy \
-            -c "Print :CFBundleShortVersionString" \
-            "$PLIST" || true
-
-          echo "Build:"
-          /usr/libexec/PlistBuddy \
-            -c "Print :CFBundleVersion" \
-            "$PLIST" || true
-
-          echo "Executable:"
-          /usr/libexec/PlistBuddy \
-            -c "Print :CFBundleExecutable" \
-            "$PLIST" || true
-
       - name: Remove old signing files
         run: |
           rm -rf "$APP_PATH/_CodeSignature"
@@ -209,7 +184,6 @@ jobs:
             "$GITHUB_WORKSPACE/3105_HTVANTIX.ipa" \
             Payload
 
-          echo "IPA created:"
           ls -lh "$GITHUB_WORKSPACE/3105_HTVANTIX.ipa"
 
       - name: Upload IPA
