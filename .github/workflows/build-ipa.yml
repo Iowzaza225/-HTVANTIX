@@ -1,4 +1,4 @@
-name: Build HTVANTIX UI Restored IPA
+name: Build HTVANTIX Secure IPA
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
         run: |
           set -e
 
-          SOURCE_ZIP="HTV811_UI_RESTORED_PRIVACY_SAFE.zip"
+          SOURCE_ZIP="HTV811_CAPTURE_FROM_WORKING_VERSION.zip"
 
           if [ ! -f "$SOURCE_ZIP" ]; then
             echo "ERROR: Missing $SOURCE_ZIP"
@@ -99,7 +99,31 @@ jobs:
 
           echo "App token injected"
 
-      - name: Verify source
+      - name: Verify app token injection
+        shell: bash
+        env:
+          HTVANTIX_APP_TOKEN: ${{ secrets.HTVANTIX_APP_TOKEN }}
+        run: |
+          set -e
+
+          PLIST="$PROJECT_ROOT/HTVANTIX/Info.plist"
+
+          ACTUAL=$(/usr/libexec/PlistBuddy \
+            -c "Print :HTVANTIXAppToken" "$PLIST")
+
+          if [ "$ACTUAL" = "__HTVANTIX_APP_TOKEN__" ]; then
+            echo "ERROR: Token placeholder was NOT replaced"
+            exit 1
+          fi
+
+          if [ "$ACTUAL" != "$HTVANTIX_APP_TOKEN" ]; then
+            echo "ERROR: Injected token does not match GitHub Secret"
+            exit 1
+          fi
+
+          echo "APP TOKEN INJECTION OK"
+
+      - name: Verify source identity
         shell: bash
         run: |
           set -e
@@ -209,7 +233,7 @@ jobs:
           echo "APP_PATH=$APP" >> "$GITHUB_ENV"
           echo "APP=$APP"
 
-      - name: Verify built app
+      - name: Verify built app identity
         if: success()
         shell: bash
         run: |
@@ -247,6 +271,35 @@ jobs:
           test "$BUILD" = "68"
           test "$BUILD_ID" = "HTV-811-68-V41"
 
+      - name: Verify token inside built app
+        if: success()
+        shell: bash
+        env:
+          HTVANTIX_APP_TOKEN: ${{ secrets.HTVANTIX_APP_TOKEN }}
+        run: |
+          set -e
+
+          ACTUAL=$(/usr/libexec/PlistBuddy \
+            -c "Print :HTVANTIXAppToken" \
+            "$APP_PATH/Info.plist")
+
+          if [ -z "$ACTUAL" ]; then
+            echo "ERROR: HTVANTIXAppToken missing from built app"
+            exit 1
+          fi
+
+          if [ "$ACTUAL" = "__HTVANTIX_APP_TOKEN__" ]; then
+            echo "ERROR: Built app still contains token placeholder"
+            exit 1
+          fi
+
+          if [ "$ACTUAL" != "$HTVANTIX_APP_TOKEN" ]; then
+            echo "ERROR: Built IPA would contain wrong app token"
+            exit 1
+          fi
+
+          echo "BUILT APP TOKEN OK"
+
       - name: Package unsigned IPA
         if: success()
         shell: bash
@@ -258,7 +311,7 @@ jobs:
 
           cp -R "$APP_PATH" Payload/
 
-          IPA="HTVANTIX_UI_RESTORED_8.11_68_V41_unsigned.ipa"
+          IPA="HTVANTIX_8.11_68_V41_unsigned.ipa"
 
           rm -f "$IPA"
           zip -qry "$IPA" Payload
@@ -272,7 +325,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-ui-restored-build-log
+          name: HTVANTIX-build-log
           path: build.log
           if-no-files-found: ignore
 
@@ -280,6 +333,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-UI-RESTORED-IPA
-          path: HTVANTIX_UI_RESTORED_8.11_68_V41_unsigned.ipa
+          name: HTVANTIX-811-IPA
+          path: HTVANTIX_8.11_68_V41_unsigned.ipa
           if-no-files-found: error
