@@ -1,4 +1,4 @@
-name: Build HTVANTIX Owner Visible Privacy IPA
+name: Build HTVANTIX UI Restored IPA
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
         run: |
           set -e
 
-          SOURCE_ZIP="HTV811_PRIVACY_OWNER_VISIBLE_FIX.zip"
+          SOURCE_ZIP="HTV811_UI_RESTORED_PRIVACY_SAFE.zip"
 
           if [ ! -f "$SOURCE_ZIP" ]; then
             echo "ERROR: Missing $SOURCE_ZIP"
@@ -258,7 +258,7 @@ jobs:
 
           cp -R "$APP_PATH" Payload/
 
-          IPA="HTVANTIX_OWNER_VISIBLE_8.11_68_V41_unsigned.ipa"
+          IPA="HTVANTIX_UI_RESTORED_8.11_68_V41_unsigned.ipa"
 
           rm -f "$IPA"
           zip -qry "$IPA" Payload
@@ -272,7 +272,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-owner-visible-build-log
+          name: HTVANTIX-ui-restored-build-log
           path: build.log
           if-no-files-found: ignore
 
@@ -280,6 +280,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-OWNER-VISIBLE-IPA
-          path: HTVANTIX_OWNER_VISIBLE_8.11_68_V41_unsigned.ipa
+          name: HTVANTIX-UI-RESTORED-IPA
+          path: HTVANTIX_UI_RESTORED_8.11_68_V41_unsigned.ipa
           if-no-files-found: error
