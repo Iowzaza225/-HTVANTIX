@@ -1,4 +1,4 @@
-name: Build HTVANTIX Secure IPA
+name: Build HTVANTIX Owner Visible Capture V2
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
         run: |
           set -e
 
-          SOURCE_ZIP="HTV811_CAPTURE_FROM_WORKING_VERSION.zip"
+          SOURCE_ZIP="HTV811_OWNER_VISIBLE_CAPTURE_V2.zip"
 
           if [ ! -f "$SOURCE_ZIP" ]; then
             echo "ERROR: Missing $SOURCE_ZIP"
@@ -311,7 +311,7 @@ jobs:
 
           cp -R "$APP_PATH" Payload/
 
-          IPA="HTVANTIX_8.11_68_V41_unsigned.ipa"
+          IPA="HTVANTIX_OWNER_VISIBLE_CAPTURE_V2_8.11_68_unsigned.ipa"
 
           rm -f "$IPA"
           zip -qry "$IPA" Payload
@@ -325,7 +325,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-build-log
+          name: HTVANTIX-owner-visible-v2-build-log
           path: build.log
           if-no-files-found: ignore
 
@@ -333,6 +333,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-811-IPA
-          path: HTVANTIX_8.11_68_V41_unsigned.ipa
+          name: HTVANTIX-OWNER-VISIBLE-CAPTURE-V2
+          path: HTVANTIX_OWNER_VISIBLE_CAPTURE_V2_8.11_68_unsigned.ipa
           if-no-files-found: error
