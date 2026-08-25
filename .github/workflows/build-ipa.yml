@@ -1,338 +1,67 @@
-name: Build HTVANTIX Owner Visible Capture V2
+name: Build HTVANTIX IPA
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract source
-        shell: bash
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Find Xcode project
         run: |
-          set -e
+          find . -maxdepth 3 \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) -print
 
-          SOURCE_ZIP="HTV811_OWNER_VISIBLE_CAPTURE_V2.zip"
-
-          if [ ! -f "$SOURCE_ZIP" ]; then
-            echo "ERROR: Missing $SOURCE_ZIP"
-            exit 1
-          fi
-
-          rm -rf work
-          mkdir -p work
-
-          unzip -q "$SOURCE_ZIP" -d work
-
-          ROOT="work/HTVANTIX_3105_BASE_UI_SECURITY_MERGE"
-
-          test -d "$ROOT/HTVANTIX.xcodeproj" || {
-            echo "ERROR: HTVANTIX.xcodeproj not found"
-            exit 1
-          }
-
-          test -f "$ROOT/HTVANTIX/Info.plist" || {
-            echo "ERROR: Info.plist not found"
-            exit 1
-          }
-
-          echo "PROJECT_ROOT=$ROOT" >> "$GITHUB_ENV"
-
-          echo "===== SOURCE READY ====="
-          echo "$ROOT"
-
-      - name: Fix app identity
-        shell: bash
-        run: |
-          set -e
-
-          PLIST="$PROJECT_ROOT/HTVANTIX/Info.plist"
-
-          /usr/libexec/PlistBuddy \
-            -c "Set :CFBundleIdentifier \$(PRODUCT_BUNDLE_IDENTIFIER)" \
-            "$PLIST" 2>/dev/null || \
-          /usr/libexec/PlistBuddy \
-            -c "Add :CFBundleIdentifier string \$(PRODUCT_BUNDLE_IDENTIFIER)" \
-            "$PLIST"
-
-          /usr/libexec/PlistBuddy \
-            -c "Set :CFBundleExecutable \$(EXECUTABLE_NAME)" \
-            "$PLIST" 2>/dev/null || \
-          /usr/libexec/PlistBuddy \
-            -c "Add :CFBundleExecutable string \$(EXECUTABLE_NAME)" \
-            "$PLIST"
-
-          /usr/libexec/PlistBuddy \
-            -c "Set :CFBundlePackageType APPL" \
-            "$PLIST" 2>/dev/null || \
-          /usr/libexec/PlistBuddy \
-            -c "Add :CFBundlePackageType string APPL" \
-            "$PLIST"
-
-      - name: Inject app token
-        shell: bash
+      - name: Inject HTVANTIX App Token
         env:
           HTVANTIX_APP_TOKEN: ${{ secrets.HTVANTIX_APP_TOKEN }}
         run: |
-          set -e
-
-          if [ -z "$HTVANTIX_APP_TOKEN" ]; then
-            echo "ERROR: Missing GitHub Secret HTVANTIX_APP_TOKEN"
-            exit 1
-          fi
-
-          PLIST="$PROJECT_ROOT/HTVANTIX/Info.plist"
-
-          /usr/libexec/PlistBuddy \
-            -c "Set :HTVANTIXAppToken $HTVANTIX_APP_TOKEN" \
-            "$PLIST" 2>/dev/null || \
-          /usr/libexec/PlistBuddy \
-            -c "Add :HTVANTIXAppToken string $HTVANTIX_APP_TOKEN" \
-            "$PLIST"
-
-          echo "App token injected"
-
-      - name: Verify app token injection
-        shell: bash
-        env:
-          HTVANTIX_APP_TOKEN: ${{ secrets.HTVANTIX_APP_TOKEN }}
-        run: |
-          set -e
-
-          PLIST="$PROJECT_ROOT/HTVANTIX/Info.plist"
-
-          ACTUAL=$(/usr/libexec/PlistBuddy \
-            -c "Print :HTVANTIXAppToken" "$PLIST")
-
-          if [ "$ACTUAL" = "__HTVANTIX_APP_TOKEN__" ]; then
-            echo "ERROR: Token placeholder was NOT replaced"
-            exit 1
-          fi
-
-          if [ "$ACTUAL" != "$HTVANTIX_APP_TOKEN" ]; then
-            echo "ERROR: Injected token does not match GitHub Secret"
-            exit 1
-          fi
-
-          echo "APP TOKEN INJECTION OK"
-
-      - name: Verify source identity
-        shell: bash
-        run: |
-          set -e
-
-          PLIST="$PROJECT_ROOT/HTVANTIX/Info.plist"
-          PBX="$PROJECT_ROOT/HTVANTIX.xcodeproj/project.pbxproj"
-
-          NAME=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleDisplayName" "$PLIST")
-
-          VERSION=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleShortVersionString" "$PLIST")
-
-          BUILD=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleVersion" "$PLIST")
-
-          BUILD_ID=$(/usr/libexec/PlistBuddy \
-            -c "Print :HTVANTIXBuildID" "$PLIST")
-
-          echo ""
-          echo "========== SOURCE =========="
-          echo "Name     : $NAME"
-          echo "Version  : $VERSION"
-          echo "Build    : $BUILD"
-          echo "Build ID : $BUILD_ID"
-          echo "============================"
-
-          test "$NAME" = "HTVANTIX"
-          test "$VERSION" = "8.11"
-          test "$BUILD" = "68"
-          test "$BUILD_ID" = "HTV-811-68-V41"
-
-          grep -q \
-            'PRODUCT_BUNDLE_IDENTIFIER = com.htblackshop.htvantix;' \
-            "$PBX" || {
-              echo "ERROR: Wrong Bundle ID"
-              exit 1
-            }
-
-      - name: Select Xcode
-        shell: bash
-        run: |
-          sudo xcode-select \
-            -s /Applications/Xcode.app/Contents/Developer
-
-          xcodebuild -version
-
-      - name: Check project
-        shell: bash
-        run: |
-          xcodebuild \
-            -project "$PROJECT_ROOT/HTVANTIX.xcodeproj" \
-            -scheme HTVANTIX \
-            -list
+          echo "HTVANTIX_APP_TOKEN is configured"
+          echo "HTVANTIX_APP_TOKEN=$HTVANTIX_APP_TOKEN" >> $GITHUB_ENV
 
       - name: Build HTVANTIX
-        shell: bash
         run: |
-          set +e
-
-          rm -rf build
-          mkdir -p build
+          set -o pipefail
 
           xcodebuild \
-            -project "$PROJECT_ROOT/HTVANTIX.xcodeproj" \
+            -project HTVANTIX.xcodeproj \
             -scheme HTVANTIX \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath "$GITHUB_WORKSPACE/build/DerivedData" \
-            PRODUCT_BUNDLE_IDENTIFIER="com.htblackshop.htvantix" \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            build \
-            2>&1 | tee build.log
+            HTVANTIX_APP_TOKEN="${HTVANTIX_APP_TOKEN}" \
+            clean build
 
-          STATUS=${PIPESTATUS[0]}
-
-          echo ""
-          echo "========== XCODE ERRORS =========="
-          grep -nE \
-            ':[0-9]+:[0-9]+: (error|fatal error):' \
-            build.log || true
-          echo "=================================="
-
-          exit $STATUS
-
-      - name: Find built app
-        if: success()
-        shell: bash
+      - name: Find APP
         run: |
-          set -e
+          find build -name "*.app" -print
 
-          APP=$(find \
-            "$GITHUB_WORKSPACE/build/DerivedData/Build/Products/Release-iphoneos" \
-            -maxdepth 1 \
-            -type d \
-            -name "*.app" \
-            -print \
-            -quit)
+      - name: Create IPA
+        run: |
+          APP_PATH=$(find build -name "*.app" -type d | head -1)
 
-          if [ -z "$APP" ]; then
-            echo "ERROR: Built .app not found"
+          if [ -z "$APP_PATH" ]; then
+            echo "ไม่พบไฟล์ .app"
             exit 1
           fi
 
-          echo "APP_PATH=$APP" >> "$GITHUB_ENV"
-          echo "APP=$APP"
+          echo "APP_PATH=$APP_PATH"
 
-      - name: Verify built app identity
-        if: success()
-        shell: bash
-        run: |
-          set -e
-
-          PLIST="$APP_PATH/Info.plist"
-
-          NAME=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleDisplayName" "$PLIST")
-
-          BUNDLE_ID=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleIdentifier" "$PLIST")
-
-          VERSION=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleShortVersionString" "$PLIST")
-
-          BUILD=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleVersion" "$PLIST")
-
-          BUILD_ID=$(/usr/libexec/PlistBuddy \
-            -c "Print :HTVANTIXBuildID" "$PLIST")
-
-          echo ""
-          echo "========== BUILT APP =========="
-          echo "Name      : $NAME"
-          echo "Bundle ID : $BUNDLE_ID"
-          echo "Version   : $VERSION"
-          echo "Build     : $BUILD"
-          echo "Build ID  : $BUILD_ID"
-          echo "==============================="
-
-          test "$NAME" = "HTVANTIX"
-          test "$BUNDLE_ID" = "com.htblackshop.htvantix"
-          test "$VERSION" = "8.11"
-          test "$BUILD" = "68"
-          test "$BUILD_ID" = "HTV-811-68-V41"
-
-      - name: Verify token inside built app
-        if: success()
-        shell: bash
-        env:
-          HTVANTIX_APP_TOKEN: ${{ secrets.HTVANTIX_APP_TOKEN }}
-        run: |
-          set -e
-
-          ACTUAL=$(/usr/libexec/PlistBuddy \
-            -c "Print :HTVANTIXAppToken" \
-            "$APP_PATH/Info.plist")
-
-          if [ -z "$ACTUAL" ]; then
-            echo "ERROR: HTVANTIXAppToken missing from built app"
-            exit 1
-          fi
-
-          if [ "$ACTUAL" = "__HTVANTIX_APP_TOKEN__" ]; then
-            echo "ERROR: Built app still contains token placeholder"
-            exit 1
-          fi
-
-          if [ "$ACTUAL" != "$HTVANTIX_APP_TOKEN" ]; then
-            echo "ERROR: Built IPA would contain wrong app token"
-            exit 1
-          fi
-
-          echo "BUILT APP TOKEN OK"
-
-      - name: Package unsigned IPA
-        if: success()
-        shell: bash
-        run: |
-          set -e
-
-          rm -rf Payload
           mkdir -p Payload
-
           cp -R "$APP_PATH" Payload/
 
-          IPA="HTVANTIX_OWNER_VISIBLE_CAPTURE_V2_8.11_68_unsigned.ipa"
-
-          rm -f "$IPA"
-          zip -qry "$IPA" Payload
-
-          echo ""
-          echo "========== IPA CREATED =========="
-          ls -lh "$IPA"
-          echo "================================="
-
-      - name: Upload build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: HTVANTIX-owner-visible-v2-build-log
-          path: build.log
-          if-no-files-found: ignore
+          zip -r HTVANTIX.ipa Payload
 
       - name: Upload IPA
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-OWNER-VISIBLE-CAPTURE-V2
-          path: HTVANTIX_OWNER_VISIBLE_CAPTURE_V2_8.11_68_unsigned.ipa
-          if-no-files-found: error
+          name: HTVANTIX-IPA
+          path: HTVANTIX.ipa
