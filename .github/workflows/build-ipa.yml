@@ -1,4 +1,4 @@
-name: Build HTV811 MobileHouseArrest IPA
+name: Build HTV811 DEBUG IPA
 
 on:
   workflow_dispatch:
@@ -116,22 +116,7 @@ jobs:
               "$PBXPROJ"
           fi
 
-          PLIST=$(find "$PROJECT_DIR" \
-            -type f \
-            -name "Info.plist" \
-            | head -n 1)
-
-          if [ -n "$PLIST" ]; then
-            /usr/libexec/PlistBuddy \
-              -c "Delete :CFBundleIdentifier" \
-              "$PLIST" 2>/dev/null || true
-
-            /usr/libexec/PlistBuddy \
-              -c "Add :CFBundleIdentifier string $BUNDLE_ID" \
-              "$PLIST"
-          fi
-
-          echo "Bundle ID forced to: $BUNDLE_ID"
+          echo "Bundle ID: $BUNDLE_ID"
 
       - name: Inject app token
         run: |
@@ -249,16 +234,16 @@ jobs:
           cd "$GITHUB_WORKSPACE/ipa"
 
           zip -qry \
-            "$GITHUB_WORKSPACE/HTV811_MobileHouseArrest.ipa" \
+            "$GITHUB_WORKSPACE/HTV811_DEBUG.ipa" \
             Payload
 
-          ls -lh "$GITHUB_WORKSPACE/HTV811_MobileHouseArrest.ipa"
+          ls -lh "$GITHUB_WORKSPACE/HTV811_DEBUG.ipa"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTV811-MobileHouseArrest-IPA
-          path: HTV811_MobileHouseArrest.ipa
+          name: HTV811-DEBUG-IPA
+          path: HTV811_DEBUG.ipa
           if-no-files-found: error
           retention-days: 30
 
@@ -266,7 +251,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: HTV811-Build-Log
+          name: HTV811-DEBUG-Build-Log
           path: xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
