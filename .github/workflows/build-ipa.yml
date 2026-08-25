@@ -16,38 +16,60 @@ jobs:
 
       - name: Inspect repository
         run: |
-          echo "=== ROOT ==="
+          echo "=== BEFORE EXTRACT ==="
           pwd
           ls -la
+          find . -maxdepth 2 -type f | sort | head -200
 
-          echo "=== XCODE PROJECTS ==="
-          find . -type d -name "*.xcodeproj" -print
+      - name: Extract 3105 source ZIP
+        run: |
+          ZIP_FILE="$(find . -maxdepth 2 -type f \
+            \( -name "3105_GITHUB_READY_TOGGLE_UI.zip" \
+            -o -name "3105_PHASE1_FILE_SYSTEM_TOGGLE_UI.zip" \
+            -o -name "3105_HOME_PATCH_PRIVACY_SEPARATE_SRC*.zip" \
+            -o -name "*.zip" \) | head -1)"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: ไม่พบไฟล์ ZIP ของโปรเจกต์ใน repository"
+            exit 1
+          fi
+
+          echo "Using ZIP: $ZIP_FILE"
+
+          rm -rf extracted_3105
+          mkdir -p extracted_3105
+
+          unzip -q "$ZIP_FILE" -d extracted_3105
+
+          echo "=== AFTER EXTRACT ==="
+          find extracted_3105 -type d -name "*.xcodeproj" -print
 
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
-      - name: Detect project and scheme
+      - name: Detect project
         run: |
-          PROJECT="$(find . -type d -name "*.xcodeproj" | head -1)"
+          PROJECT="$(find extracted_3105 -type d -name "*.xcodeproj" | head -1)"
 
           if [ -z "$PROJECT" ]; then
-            echo "ERROR: no .xcodeproj found"
+            echo "ERROR: แตก ZIP แล้วแต่ไม่พบ .xcodeproj"
             exit 1
           fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "Found project: $PROJECT"
 
-          echo "=== PROJECT INFO ==="
           xcodebuild -project "$PROJECT" -list
 
+      - name: Detect scheme
+        run: |
           SCHEME="$(xcodebuild -project "$PROJECT" -list 2>/dev/null \
             | awk '/Schemes:/{flag=1;next} flag && NF {gsub(/^[ \t]+|[ \t]+$/, ""); print; exit}')"
 
           if [ -z "$SCHEME" ]; then
-            echo "ERROR: scheme not found"
+            echo "ERROR: ไม่พบ Scheme"
             exit 1
           fi
 
@@ -80,7 +102,7 @@ jobs:
           APP="$(find build -type d -name "*.app" | head -1)"
 
           if [ -z "$APP" ]; then
-            echo "ERROR: .app not found"
+            echo "ERROR: Build ผ่านแต่ไม่พบ .app"
             exit 1
           fi
 
