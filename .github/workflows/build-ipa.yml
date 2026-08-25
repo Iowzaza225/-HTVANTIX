@@ -17,13 +17,12 @@ jobs:
       - name: Find Source ZIP
         shell: bash
         run: |
-          ZIP_FILE="./HTVANTIX_KEY_GATE_DIRECT_SESSION_PATCH.zip"
-
-          echo "=== ZIP FILES IN REPO ==="
-          find . -maxdepth 1 -type f -name "*.zip" -print
+          ZIP_FILE="./HTVANTIX_PATCH_ORIGINAL_APPLY_RESTORED.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: ไม่พบไฟล์ $ZIP_FILE"
+            echo "ERROR: ไม่พบ $ZIP_FILE"
+            echo "=== ZIP FILES ==="
+            find . -maxdepth 1 -type f -name "*.zip" -print
             exit 1
           fi
 
@@ -38,7 +37,7 @@ jobs:
 
           unzip -q "$ZIP_FILE" -d source
 
-          echo "=== EXTRACTED PROJECTS ==="
+          echo "=== XCODE PROJECTS ==="
           find source -type d -name "*.xcodeproj" -print
 
       - name: Find Xcode Project
@@ -63,11 +62,7 @@ jobs:
       - name: Detect Scheme
         shell: bash
         run: |
-          echo "=== PROJECT INFO ==="
-
-          xcodebuild \
-            -project "$PROJECT" \
-            -list
+          xcodebuild -project "$PROJECT" -list
 
           SCHEME="$(xcodebuild \
             -project "$PROJECT" \
@@ -91,11 +86,6 @@ jobs:
         run: |
           set -o pipefail
 
-          echo "=== BUILDING LATEST KEY-GATE SOURCE ==="
-          echo "Project: $PROJECT"
-          echo "Scheme: $SCHEME"
-          echo "ZIP: $ZIP_FILE"
-
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
@@ -110,12 +100,7 @@ jobs:
       - name: Find Built App
         shell: bash
         run: |
-          echo "=== BUILT APP ==="
-
-          APP="$(find "$GITHUB_WORKSPACE/build" \
-            -type d \
-            -name "*.app" \
-            | head -1)"
+          APP="$(find "$GITHUB_WORKSPACE/build" -type d -name "*.app" | head -1)"
 
           if [ -z "$APP" ]; then
             echo "ERROR: ไม่พบ .app"
@@ -125,21 +110,6 @@ jobs:
           echo "APP=$APP" >> "$GITHUB_ENV"
           echo "Using app: $APP"
 
-      - name: Verify Key Gate Source
-        shell: bash
-        run: |
-          echo "=== VERIFY SOURCE ==="
-
-          if grep -R "sessionToken" source -n | head -20; then
-            echo "พบ sessionToken ใน source"
-          else
-            echo "WARNING: ไม่พบ sessionToken"
-          fi
-
-          if grep -R "License" source/ThreeOneOSFive source/*/ThreeOneOSFive -n 2>/dev/null | head -20; then
-            echo "พบ License flow"
-          fi
-
       - name: Create IPA
         shell: bash
         run: |
@@ -148,19 +118,16 @@ jobs:
 
           cp -R "$APP" Payload/
 
-          /usr/bin/zip \
-            -qry \
-            HTVANTIX-KEY-GATE-unsigned.ipa \
-            Payload
+          /usr/bin/zip -qry HTVANTIX-unsigned.ipa Payload
 
           echo "=== IPA CREATED ==="
-          ls -lh HTVANTIX-KEY-GATE-unsigned.ipa
+          ls -lh HTVANTIX-unsigned.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-KEY-GATE-IPA
-          path: HTVANTIX-KEY-GATE-unsigned.ipa
+          name: HTVANTIX-IPA
+          path: HTVANTIX-unsigned.ipa
           if-no-files-found: error
 
       - name: Upload Build Log
