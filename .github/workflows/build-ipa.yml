@@ -17,8 +17,12 @@ jobs:
       - name: Show project files
         run: |
           pwd
+          echo "=== ROOT ==="
           ls -la
+          echo "=== XCODE PROJECTS ==="
           find . -maxdepth 3 -name "*.xcodeproj" -print
+          echo "=== WORKSPACES ==="
+          find . -maxdepth 3 -name "*.xcworkspace" -print
 
       - name: Select Xcode
         run: |
@@ -27,8 +31,6 @@ jobs:
 
       - name: Build App
         run: |
-          cd 3105-main
-
           xcodebuild \
             -project ThreeOneOSFive.xcodeproj \
             -scheme ThreeOneOSFive \
@@ -43,11 +45,11 @@ jobs:
       - name: Find App
         run: |
           echo "=== APP OUTPUT ==="
-          find 3105-main/build -type d -name "*.app" -print
+          find build -type d -name "*.app" -print
 
       - name: Create IPA
         run: |
-          APP="$(find 3105-main/build -type d -name "*.app" | head -1)"
+          APP="$(find build -type d -name "*.app" | head -1)"
 
           if [ -z "$APP" ]; then
             echo "ERROR: ไม่พบไฟล์ .app"
