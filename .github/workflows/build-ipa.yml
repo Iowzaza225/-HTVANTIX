@@ -1,13 +1,7 @@
-name: Build HTV811 IPA
+name: Build HTVANTIX IPA
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "HTV811_V4_KEYFIX_READY_NEW.zip"
-      - ".github/workflows/build.yml"
 
 jobs:
   build:
@@ -21,21 +15,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check ZIP
+      - name: Show Xcode Version
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Find ZIP
         run: |
           set -e
 
-          ZIP_FILE="$GITHUB_WORKSPACE/HTV811_V4_KEYFIX_READY_NEW.zip"
+          ZIP_FILE=$(find "$GITHUB_WORKSPACE" \
+            -maxdepth 2 \
+            -type f \
+            -name "*.zip" \
+            | head -n 1)
 
-          if [ ! -f "$ZIP_FILE" ]; then
+          if [ -z "$ZIP_FILE" ]; then
             echo "❌ ZIP NOT FOUND"
-            echo "Expected: $ZIP_FILE"
-            ls -la "$GITHUB_WORKSPACE"
+            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f
             exit 1
           fi
 
-          echo "✅ ZIP FOUND"
-          ls -lh "$ZIP_FILE"
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+          echo "✅ ZIP: $ZIP_FILE"
 
       - name: Extract ZIP
         run: |
@@ -44,11 +46,10 @@ jobs:
           rm -rf "$GITHUB_WORKSPACE/source"
           mkdir -p "$GITHUB_WORKSPACE/source"
 
-          unzip -q \
-            "$GITHUB_WORKSPACE/HTV811_V4_KEYFIX_READY_NEW.zip" \
+          unzip -q "$ZIP_FILE" \
             -d "$GITHUB_WORKSPACE/source"
 
-          echo "✅ EXTRACTED"
+          echo "✅ ZIP EXTRACTED"
 
       - name: Find Xcode Project
         run: |
@@ -61,7 +62,7 @@ jobs:
 
           if [ -z "$PROJECT" ]; then
             echo "❌ XCODE PROJECT NOT FOUND"
-            find "$GITHUB_WORKSPACE/source" -maxdepth 5 -print
+            find "$GITHUB_WORKSPACE/source" -maxdepth 6 -print
             exit 1
           fi
 
@@ -103,14 +104,16 @@ jobs:
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
           echo "✅ SCHEME: $SCHEME"
 
-      - name: Check Token
+      - name: Check App Token
         run: |
+          set -e
+
           if [ -z "$HTVANTIX_APP_TOKEN" ]; then
-            echo "❌ HTVANTIX_APP_TOKEN NOT SET"
+            echo "❌ HTVANTIX_APP_TOKEN NOT FOUND"
             exit 1
           fi
 
-          echo "✅ TOKEN FOUND"
+          echo "✅ APP TOKEN FOUND"
 
       - name: Build Release
         run: |
@@ -156,6 +159,11 @@ jobs:
 
           PLIST="$APP_PATH/Info.plist"
 
+          if [ ! -f "$PLIST" ]; then
+            echo "❌ Info.plist NOT FOUND"
+            exit 1
+          fi
+
           /usr/libexec/PlistBuddy \
             -c "Set :CFBundleIdentifier $BUNDLE_ID" \
             "$PLIST"
@@ -167,14 +175,18 @@ jobs:
 
       - name: Remove Old Signing
         run: |
+          set -e
+
           rm -rf "$APP_PATH/_CodeSignature"
           rm -f "$APP_PATH/embedded.mobileprovision"
+
+          echo "✅ OLD SIGNING REMOVED"
 
       - name: Create IPA
         run: |
           set -e
 
-          IPA_NAME="HTV811_KEYFIX_${GITHUB_RUN_NUMBER}.ipa"
+          IPA_NAME="HTVANTIX_${GITHUB_RUN_NUMBER}.ipa"
 
           rm -rf "$GITHUB_WORKSPACE/ipa"
           mkdir -p "$GITHUB_WORKSPACE/ipa/Payload"
@@ -190,13 +202,13 @@ jobs:
 
           echo "IPA_NAME=$IPA_NAME" >> "$GITHUB_ENV"
 
-          echo "✅ IPA CREATED"
+          echo "✅ CREATED: $IPA_NAME"
           ls -lh "$GITHUB_WORKSPACE/$IPA_NAME"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTV811-KEYFIX-${{ github.run_number }}
+          name: HTVANTIX-${{ github.run_number }}
           path: ${{ env.IPA_NAME }}
           if-no-files-found: error
           retention-days: 30
@@ -205,7 +217,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: HTV811-BUILD-LOG-${{ github.run_number }}
+          name: HTVANTIX-BUILD-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
