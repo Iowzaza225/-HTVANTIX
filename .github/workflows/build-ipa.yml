@@ -11,23 +11,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Show Repository Files
+        run: |
+          echo "=== ROOT FILES ==="
+          pwd
+          ls -la
+
+          echo "=== ZIP FILES ==="
+          find . -type f -name "*.zip" -print
+
       - name: Extract Source ZIP
         run: |
-          echo "=== FIND ZIP ==="
+          ZIP_FILE="./HTVANTIX_UI_FF_FFMAX_NO_SCREENSHIELD.zip"
 
-          ZIP_FILE="$(find . -type f -name "*.zip" | head -1)"
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: ไม่พบ ZIP"
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ERROR: ไม่พบไฟล์ $ZIP_FILE"
+            echo "=== ZIP FILES FOUND ==="
+            find . -type f -name "*.zip" -print
             exit 1
           fi
 
-          echo "Using: $ZIP_FILE"
+          echo "Using ZIP: $ZIP_FILE"
 
           rm -rf extracted
           mkdir -p extracted
 
           unzip -q "$ZIP_FILE" -d extracted
+
+          echo "=== EXTRACTED FILES ==="
+          find extracted -maxdepth 3 -type f | sort | head -200
 
           echo "=== XCODE PROJECTS ==="
           find extracted -type d -name "*.xcodeproj" -print
@@ -37,19 +49,24 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
-      - name: Detect Project
+      - name: Detect Xcode Project
         run: |
           PROJECT="$(find extracted -type d -name "*.xcodeproj" | head -1)"
 
           if [ -z "$PROJECT" ]; then
-            echo "ERROR: ไม่พบ .xcodeproj"
+            echo "ERROR: แตก ZIP แล้ว แต่ไม่พบ .xcodeproj"
+            echo "=== DIRECTORY TREE ==="
+            find extracted -maxdepth 4 -type d | sort
             exit 1
           fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "PROJECT = $PROJECT"
+          echo "Found project: $PROJECT"
 
-          xcodebuild -project "$PROJECT" -list
+          echo "=== PROJECT INFO ==="
+          xcodebuild \
+            -project "$PROJECT" \
+            -list
 
       - name: Detect Scheme
         run: |
@@ -64,14 +81,19 @@ jobs:
 
           if [ -z "$SCHEME" ]; then
             echo "ERROR: ไม่พบ Scheme"
+            xcodebuild -project "$PROJECT" -list
             exit 1
           fi
 
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          echo "SCHEME = $SCHEME"
+          echo "Using scheme: $SCHEME"
 
       - name: Build HTVANTIX
         run: |
+          echo "=== BUILD SETTINGS ==="
+          echo "Project: $PROJECT"
+          echo "Scheme: $SCHEME"
+
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
@@ -83,9 +105,9 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build
 
-      - name: Find APP
+      - name: Find Built App
         run: |
-          echo "=== APP ==="
+          echo "=== BUILT APPS ==="
           find build -type d -name "*.app" -print
 
       - name: Create IPA
@@ -93,11 +115,12 @@ jobs:
           APP="$(find build -type d -name "*.app" | head -1)"
 
           if [ -z "$APP" ]; then
-            echo "ERROR: Build เสร็จแต่ไม่พบ .app"
+            echo "ERROR: Build เสร็จ แต่ไม่พบ .app"
+            find build -maxdepth 5 -type d | sort | tail -200
             exit 1
           fi
 
-          echo "Found: $APP"
+          echo "Using app: $APP"
 
           rm -rf Payload
           mkdir -p Payload
