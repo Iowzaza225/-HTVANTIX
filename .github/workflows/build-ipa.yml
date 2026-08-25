@@ -63,11 +63,17 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
 
+          echo "Found project: $PROJECT"
+
       - name: Detect scheme
         run: |
           set -e
 
           cd "$PROJECT_DIR"
+
+          xcodebuild \
+            -project "$PROJECT_NAME" \
+            -list
 
           SCHEME=$(xcodebuild \
             -project "$PROJECT_NAME" \
@@ -95,6 +101,8 @@ jobs:
             echo "ERROR: HTVANTIX_APP_TOKEN is empty"
             exit 1
           fi
+
+          echo "APP TOKEN loaded"
 
       - name: Build
         run: |
@@ -132,6 +140,7 @@ jobs:
           fi
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+          echo "Found app: $APP_PATH"
 
       - name: Fix final Info.plist
         run: |
@@ -159,6 +168,16 @@ jobs:
               "$PLIST"
           fi
 
+          echo "Bundle ID:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleIdentifier" \
+            "$PLIST"
+
+          echo "Executable:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleExecutable" \
+            "$PLIST"
+
       - name: Remove old signing
         run: |
           rm -rf "$APP_PATH/_CodeSignature"
@@ -167,6 +186,8 @@ jobs:
       - name: Create IPA
         run: |
           set -e
+
+          IPA_NAME="HTV811_${GITHUB_RUN_NUMBER}.ipa"
 
           rm -rf "$GITHUB_WORKSPACE/ipa"
           mkdir -p "$GITHUB_WORKSPACE/ipa/Payload"
@@ -177,14 +198,19 @@ jobs:
           cd "$GITHUB_WORKSPACE/ipa"
 
           zip -qry \
-            "$GITHUB_WORKSPACE/HTV811.ipa" \
+            "$GITHUB_WORKSPACE/$IPA_NAME" \
             Payload
+
+          echo "IPA_NAME=$IPA_NAME" >> "$GITHUB_ENV"
+
+          echo "IPA created:"
+          ls -lh "$GITHUB_WORKSPACE/$IPA_NAME"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTV811-IPA
-          path: HTV811.ipa
+          name: HTV811-IPA-${{ github.run_number }}
+          path: ${{ env.IPA_NAME }}
           if-no-files-found: error
           retention-days: 30
 
@@ -192,7 +218,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: HTV811-Build-Log
+          name: HTV811-Build-Log-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
