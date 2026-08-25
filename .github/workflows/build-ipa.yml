@@ -14,65 +14,53 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show Repository Files
+      - name: Find Bundle ZIP
         run: |
-          echo "=== ROOT FILES ==="
-          pwd
-          ls -la
-
           echo "=== ZIP FILES ==="
           find . -type f -name "*.zip" -print
 
-      - name: Extract Source ZIP
-        run: |
-          ZIP_FILE="./HTVANTIX_UI_FF_FFMAX_NO_SCREENSHIELD.zip"
+          ZIP_FILE="./HTVANTIX_LICENSE_SESSION_REMOTE_CONTROL_BUNDLE.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: ไม่พบไฟล์ $ZIP_FILE"
-            echo "=== ZIP FILES FOUND ==="
-            find . -type f -name "*.zip" -print
+            echo "ERROR: ไม่พบ $ZIP_FILE"
             exit 1
           fi
 
-          echo "Using ZIP: $ZIP_FILE"
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-          rm -rf extracted
-          mkdir -p extracted
-
-          unzip -q "$ZIP_FILE" -d extracted
-
-          echo "=== EXTRACTED FILES ==="
-          find extracted -maxdepth 3 -type f | sort | head -200
-
-          echo "=== XCODE PROJECTS ==="
-          find extracted -type d -name "*.xcodeproj" -print
-
-      - name: Select Xcode
+      - name: Extract Bundle
         run: |
-          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-          xcodebuild -version
+          rm -rf bundle
+          mkdir -p bundle
 
-      - name: Detect Xcode Project
+          unzip -q "$ZIP_FILE" -d bundle
+
+          echo "=== EXTRACTED ==="
+          find bundle -maxdepth 3 -type d | sort | head -200
+
+      - name: Find Client Project
         run: |
-          PROJECT="$(find extracted -type d -name "*.xcodeproj" | head -1)"
+          PROJECT="$(find bundle -type d -name "*.xcodeproj" | head -1)"
 
           if [ -z "$PROJECT" ]; then
-            echo "ERROR: แตก ZIP แล้ว แต่ไม่พบ .xcodeproj"
-            echo "=== DIRECTORY TREE ==="
-            find extracted -maxdepth 4 -type d | sort
+            echo "ERROR: ไม่พบ .xcodeproj ใน bundle"
+            find bundle -maxdepth 5 -type f | sort | head -300
             exit 1
           fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "Found project: $PROJECT"
 
-          echo "=== PROJECT INFO ==="
-          xcodebuild \
-            -project "$PROJECT" \
-            -list
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
 
       - name: Detect Scheme
         run: |
+          echo "=== PROJECT INFO ==="
+          xcodebuild -project "$PROJECT" -list
+
           SCHEME="$(xcodebuild \
             -project "$PROJECT" \
             -list 2>/dev/null |
@@ -84,19 +72,14 @@ jobs:
 
           if [ -z "$SCHEME" ]; then
             echo "ERROR: ไม่พบ Scheme"
-            xcodebuild -project "$PROJECT" -list
             exit 1
           fi
 
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
           echo "Using scheme: $SCHEME"
 
-      - name: Build HTVANTIX
+      - name: Build Client
         run: |
-          echo "=== BUILD SETTINGS ==="
-          echo "Project: $PROJECT"
-          echo "Scheme: $SCHEME"
-
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
@@ -108,9 +91,9 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build
 
-      - name: Find Built App
+      - name: Find App
         run: |
-          echo "=== BUILT APPS ==="
+          echo "=== BUILT APP ==="
           find build -type d -name "*.app" -print
 
       - name: Create IPA
@@ -118,8 +101,7 @@ jobs:
           APP="$(find build -type d -name "*.app" | head -1)"
 
           if [ -z "$APP" ]; then
-            echo "ERROR: Build เสร็จ แต่ไม่พบ .app"
-            find build -maxdepth 5 -type d | sort | tail -200
+            echo "ERROR: ไม่พบ .app"
             exit 1
           fi
 
@@ -127,14 +109,11 @@ jobs:
 
           rm -rf Payload
           mkdir -p Payload
-
           cp -R "$APP" Payload/
 
-          /usr/bin/zip -qry \
-            HTVANTIX-unsigned.ipa \
-            Payload
+          /usr/bin/zip -qry HTVANTIX-unsigned.ipa Payload
 
-          echo "=== IPA CREATED ==="
+          echo "=== IPA ==="
           ls -lh HTVANTIX-unsigned.ipa
 
       - name: Upload IPA
