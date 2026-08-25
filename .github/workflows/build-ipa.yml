@@ -17,39 +17,51 @@ jobs:
       - name: Show project files
         run: |
           pwd
+          echo "=== ROOT ==="
           ls -la
+          echo "=== FILES ==="
+          find . -maxdepth 3 -type f | sort | head -300
 
       - name: Install Theos
         run: |
           brew install make ldid
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+          echo "$HOME/theos/bin" >> "$GITHUB_PATH"
 
       - name: Build
         run: |
-          export THEOS=$HOME/theos
+          export THEOS="$HOME/theos"
           export PATH="$THEOS/bin:$PATH"
 
-          make clean
+          echo "=== MAKEFILE ==="
+          find . -maxdepth 3 \( -name "Makefile" -o -name "makefile" \) -print
+
           make -j2
+
+      - name: Find App
+        run: |
+          echo "=== APP OUTPUT ==="
+          find . -type d -name "*.app" -print
 
       - name: Create IPA
         run: |
-          APP=$(find . -type d -name "*.app" | head -1)
+          APP="$(find . -type d -name "*.app" | head -1)"
 
           if [ -z "$APP" ]; then
-            echo "ERROR: ไม่พบ .app"
+            echo "ERROR: Build ผ่านแต่ไม่พบไฟล์ .app"
             exit 1
           fi
 
-          echo "Found: $APP"
+          echo "Using app: $APP"
 
           rm -rf Payload
-          mkdir Payload
+          mkdir -p Payload
           cp -R "$APP" Payload/
 
-          zip -qry 3105-unsigned.ipa Payload
+          /usr/bin/zip -qry 3105-unsigned.ipa Payload
 
+          echo "=== IPA ==="
           ls -lh 3105-unsigned.ipa
 
       - name: Upload IPA
@@ -57,3 +69,4 @@ jobs:
         with:
           name: 3105-IPA
           path: 3105-unsigned.ipa
+          if-no-files-found: error
