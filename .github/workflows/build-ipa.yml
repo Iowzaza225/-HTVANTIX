@@ -17,15 +17,16 @@ jobs:
       - name: Find Bundle ZIP
         run: |
           echo "=== ZIP FILES ==="
-          find . -type f -name "*.zip" -print
+          find . -maxdepth 1 -type f -name "*.zip" -print
 
-          ZIP_FILE="./HTVANTIX_LICENSE_SESSION_REMOTE_CONTROL_BUNDLE.zip"
+          ZIP_FILE="$(find . -maxdepth 1 -type f -name "*.zip" | head -1)"
 
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: ไม่พบ $ZIP_FILE"
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: ไม่พบไฟล์ ZIP"
             exit 1
           fi
 
+          echo "Using ZIP: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
       - name: Extract Bundle
@@ -43,8 +44,7 @@ jobs:
           PROJECT="$(find bundle -type d -name "*.xcodeproj" | head -1)"
 
           if [ -z "$PROJECT" ]; then
-            echo "ERROR: ไม่พบ .xcodeproj ใน bundle"
-            find bundle -maxdepth 5 -type f | sort | head -300
+            echo "ERROR: ไม่พบ .xcodeproj"
             exit 1
           fi
 
@@ -113,7 +113,7 @@ jobs:
 
           /usr/bin/zip -qry HTVANTIX-unsigned.ipa Payload
 
-          echo "=== IPA ==="
+          echo "=== IPA CREATED ==="
           ls -lh HTVANTIX-unsigned.ipa
 
       - name: Upload IPA
