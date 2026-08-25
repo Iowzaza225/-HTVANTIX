@@ -2,9 +2,6 @@ name: Build 3105 IPA
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build:
@@ -14,59 +11,59 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inspect repository
+      - name: Find and Extract ZIP
         run: |
-          echo "=== BEFORE EXTRACT ==="
-          pwd
+          echo "=== Repository ==="
           ls -la
-          find . -maxdepth 2 -type f | sort | head -200
 
-      - name: Extract 3105 source ZIP
-        run: |
-          ZIP_FILE="$(find . -maxdepth 2 -type f \
-            \( -name "3105_GITHUB_READY_TOGGLE_UI.zip" \
-            -o -name "3105_PHASE1_FILE_SYSTEM_TOGGLE_UI.zip" \
-            -o -name "3105_HOME_PATCH_PRIVACY_SEPARATE_SRC*.zip" \
-            -o -name "*.zip" \) | head -1)"
+          ZIP_FILE="$(find . -type f -name "*.zip" | head -1)"
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: ไม่พบไฟล์ ZIP ของโปรเจกต์ใน repository"
+            echo "ERROR: ไม่พบ ZIP"
             exit 1
           fi
 
-          echo "Using ZIP: $ZIP_FILE"
+          echo "ZIP: $ZIP_FILE"
 
-          rm -rf extracted_3105
-          mkdir -p extracted_3105
+          rm -rf extracted
+          mkdir extracted
 
-          unzip -q "$ZIP_FILE" -d extracted_3105
+          unzip -q "$ZIP_FILE" -d extracted
 
-          echo "=== AFTER EXTRACT ==="
-          find extracted_3105 -type d -name "*.xcodeproj" -print
+          echo "=== Xcode Projects ==="
+          find extracted -type d -name "*.xcodeproj" -print
 
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
-      - name: Detect project
+      - name: Detect Project
         run: |
-          PROJECT="$(find extracted_3105 -type d -name "*.xcodeproj" | head -1)"
+          PROJECT="$(find extracted -type d -name "*.xcodeproj" | head -1)"
 
           if [ -z "$PROJECT" ]; then
-            echo "ERROR: แตก ZIP แล้วแต่ไม่พบ .xcodeproj"
+            echo "ERROR: ไม่พบ .xcodeproj"
             exit 1
           fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "Found project: $PROJECT"
+          echo "Project: $PROJECT"
 
-          xcodebuild -project "$PROJECT" -list
+          xcodebuild \
+            -project "$PROJECT" \
+            -list
 
-      - name: Detect scheme
+      - name: Detect Scheme
         run: |
-          SCHEME="$(xcodebuild -project "$PROJECT" -list 2>/dev/null \
-            | awk '/Schemes:/{flag=1;next} flag && NF {gsub(/^[ \t]+|[ \t]+$/, ""); print; exit}')"
+          SCHEME="$(xcodebuild \
+            -project "$PROJECT" \
+            -list 2>/dev/null |
+            awk '/Schemes:/{flag=1;next} flag && NF {
+              gsub(/^[ \t]+|[ \t]+$/, "");
+              print;
+              exit
+            }')"
 
           if [ -z "$SCHEME" ]; then
             echo "ERROR: ไม่พบ Scheme"
@@ -74,13 +71,10 @@ jobs:
           fi
 
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          echo "Using scheme: $SCHEME"
+          echo "Scheme: $SCHEME"
 
       - name: Build App
         run: |
-          echo "Project: $PROJECT"
-          echo "Scheme: $SCHEME"
-
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
@@ -92,35 +86,34 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build
 
-      - name: Find App
-        run: |
-          echo "=== APP OUTPUT ==="
-          find build -type d -name "*.app" -print
-
       - name: Create IPA
         run: |
+          echo "=== Find APP ==="
+
           APP="$(find build -type d -name "*.app" | head -1)"
 
           if [ -z "$APP" ]; then
-            echo "ERROR: Build ผ่านแต่ไม่พบ .app"
+            echo "ERROR: ไม่พบ .app"
             exit 1
           fi
 
-          echo "Found app: $APP"
+          echo "APP: $APP"
 
           rm -rf Payload
-          mkdir -p Payload
+          mkdir Payload
 
           cp -R "$APP" Payload/
 
-          /usr/bin/zip -qry 3105-unsigned.ipa Payload
+          /usr/bin/zip -qry \
+            3105-Phase3-unsigned.ipa \
+            Payload
 
-          echo "=== IPA CREATED ==="
-          ls -lh 3105-unsigned.ipa
+          echo "=== IPA ==="
+          ls -lh 3105-Phase3-unsigned.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: 3105-IPA
-          path: 3105-unsigned.ipa
+          name: 3105-Phase3-IPA
+          path: 3105-Phase3-unsigned.ipa
           if-no-files-found: error
