@@ -1,14 +1,7 @@
-name: Build HTVANTIX IPA
+name: Build HTV811 Full UI IPA
 
 on:
   workflow_dispatch:
-
-  push:
-    branches:
-      - main
-    paths:
-      - "*.zip"
-      - ".github/workflows/**"
 
 jobs:
   build:
@@ -21,56 +14,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 20
 
-      - name: Check App Token
+      - name: Find ZIP
         run: |
           set -e
 
-          if [ -z "$HTVANTIX_APP_TOKEN" ]; then
-            echo "ERROR: HTVANTIX_APP_TOKEN is empty"
-            exit 1
-          fi
+          ZIP_FILE=$(find "$GITHUB_WORKSPACE" \
+            -maxdepth 2 \
+            -type f \
+            -name "HTV811_FULL_UI_SYSTEM_RESTORED_PATCH_UNTOUCHED.zip" \
+            | head -n 1)
 
-          echo "APP TOKEN FOUND"
-
-      - name: Find Latest ZIP
-        run: |
-          set -e
-
-          ZIP_REL=$(git diff-tree \
-            --no-commit-id \
-            --name-only \
-            -r "$GITHUB_SHA" \
-            | grep -E '\.zip$' \
-            | head -n 1 || true)
-
-          if [ -z "$ZIP_REL" ]; then
-            ZIP_REL=$(git log \
-              --name-only \
-              --pretty=format: \
-              -- "*.zip" \
-              | grep -E '\.zip$' \
-              | head -n 1 || true)
-          fi
-
-          if [ -z "$ZIP_REL" ]; then
+          if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: ZIP not found"
             exit 1
           fi
 
-          ZIP_FILE="$GITHUB_WORKSPACE/$ZIP_REL"
-
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: ZIP does not exist"
-            exit 1
-          fi
-
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-
-          echo "BUILDING:"
-          echo "$ZIP_REL"
+          echo "BUILDING: $ZIP_FILE"
 
       - name: Extract Source
         run: |
@@ -102,18 +63,11 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
 
-          echo "PROJECT:"
-          echo "$PROJECT"
-
       - name: Detect Scheme
         run: |
           set -e
 
           cd "$PROJECT_DIR"
-
-          xcodebuild \
-            -project "$PROJECT_NAME" \
-            -list
 
           SCHEME=$(xcodebuild \
             -project "$PROJECT_NAME" \
@@ -133,9 +87,17 @@ jobs:
           fi
 
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          echo "SCHEME: $SCHEME"
 
-      - name: Build Release
+      - name: Check App Token
+        run: |
+          set -e
+
+          if [ -z "$HTVANTIX_APP_TOKEN" ]; then
+            echo "ERROR: HTVANTIX_APP_TOKEN is empty"
+            exit 1
+          fi
+
+      - name: Build
         run: |
           set -o pipefail
 
@@ -148,14 +110,14 @@ jobs:
             -sdk iphoneos \
             -derivedDataPath "$GITHUB_WORKSPACE/build" \
             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-            HTVANTIX_APP_TOKEN="$HTVANTIX_APP_TOKEN" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            HTVANTIX_APP_TOKEN="$HTVANTIX_APP_TOKEN" \
             clean build \
             | tee "$GITHUB_WORKSPACE/xcodebuild.log"
 
-      - name: Find Built APP
+      - name: Find APP
         run: |
           set -e
 
@@ -166,25 +128,17 @@ jobs:
             | head -n 1)
 
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: .app not found"
+            echo "ERROR: APP not found"
             exit 1
           fi
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
 
-          echo "APP:"
-          echo "$APP_PATH"
-
-      - name: Inject Client Configuration
+      - name: Inject Config
         run: |
           set -e
 
           PLIST="$APP_PATH/Info.plist"
-
-          if [ ! -f "$PLIST" ]; then
-            echo "ERROR: Info.plist not found"
-            exit 1
-          fi
 
           /usr/libexec/PlistBuddy \
             -c "Delete :CFBundleIdentifier" \
@@ -214,29 +168,10 @@ jobs:
               "$PLIST"
           fi
 
-          if /usr/libexec/PlistBuddy \
-            -c "Print :HTVANTIXAppToken" \
-            "$PLIST" >/dev/null 2>&1; then
-            echo "CLIENT TOKEN INJECTED"
-          else
-            echo "ERROR: CLIENT TOKEN INJECTION FAILED"
-            exit 1
-          fi
-
-          echo "Bundle ID:"
-          /usr/libexec/PlistBuddy \
-            -c "Print :CFBundleIdentifier" \
-            "$PLIST"
-
-          echo "Executable:"
-          /usr/libexec/PlistBuddy \
-            -c "Print :CFBundleExecutable" \
-            "$PLIST"
+          echo "CONFIG INJECTED"
 
       - name: Remove Old Signing
         run: |
-          set -e
-
           rm -rf "$APP_PATH/_CodeSignature"
           rm -f "$APP_PATH/embedded.mobileprovision"
 
@@ -244,7 +179,7 @@ jobs:
         run: |
           set -e
 
-          IPA_NAME="HTVANTIX_CONFIGFIX_${GITHUB_RUN_NUMBER}.ipa"
+          IPA_NAME="HTVANTIX_FULLUI_${GITHUB_RUN_NUMBER}.ipa"
 
           rm -rf "$GITHUB_WORKSPACE/Payload"
           mkdir -p "$GITHUB_WORKSPACE/Payload"
@@ -260,15 +195,13 @@ jobs:
 
           echo "IPA_NAME=$IPA_NAME" >> "$GITHUB_ENV"
 
-          echo "IPA CREATED:"
-          echo "$IPA_NAME"
-
+          echo "IPA CREATED: $IPA_NAME"
           ls -lh "$IPA_NAME"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-CONFIGFIX-${{ github.run_number }}
+          name: HTVANTIX-FULLUI-${{ github.run_number }}
           path: ${{ env.IPA_NAME }}
           if-no-files-found: error
           retention-days: 30
@@ -277,7 +210,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-BUILD-LOG-${{ github.run_number }}
+          name: HTVANTIX-FULLUI-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
