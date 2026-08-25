@@ -23,37 +23,31 @@ jobs:
           echo "=== XCODE PROJECTS ==="
           find . -type d -name "*.xcodeproj" -print
 
-          echo "=== WORKSPACES ==="
-          find . -type d -name "*.xcworkspace" -print
-
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
-      - name: Detect project
-        id: detect
+      - name: Detect project and scheme
         run: |
           PROJECT="$(find . -type d -name "*.xcodeproj" | head -1)"
 
           if [ -z "$PROJECT" ]; then
-            echo "ERROR: ไม่พบ .xcodeproj ใน repository"
+            echo "ERROR: no .xcodeproj found"
             exit 1
           fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "Found project: $PROJECT"
 
-          echo "=== SCHEMES ==="
+          echo "=== PROJECT INFO ==="
           xcodebuild -project "$PROJECT" -list
 
-      - name: Detect scheme
-        run: |
           SCHEME="$(xcodebuild -project "$PROJECT" -list 2>/dev/null \
             | awk '/Schemes:/{flag=1;next} flag && NF {gsub(/^[ \t]+|[ \t]+$/, ""); print; exit}')"
 
           if [ -z "$SCHEME" ]; then
-            echo "ERROR: หา Scheme ไม่เจอ"
+            echo "ERROR: scheme not found"
             exit 1
           fi
 
@@ -86,18 +80,20 @@ jobs:
           APP="$(find build -type d -name "*.app" | head -1)"
 
           if [ -z "$APP" ]; then
-            echo "ERROR: Build จบแต่ไม่พบ .app"
+            echo "ERROR: .app not found"
             exit 1
           fi
 
-          echo "Using app: $APP"
+          echo "Found app: $APP"
 
           rm -rf Payload
           mkdir -p Payload
+
           cp -R "$APP" Payload/
 
           /usr/bin/zip -qry 3105-unsigned.ipa Payload
 
+          echo "=== IPA CREATED ==="
           ls -lh 3105-unsigned.ipa
 
       - name: Upload IPA
