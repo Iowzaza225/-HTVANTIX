@@ -1,4 +1,4 @@
-name: Build 3105 IPA
+name: Build HTVANTIX IPA
 
 on:
   workflow_dispatch:
@@ -11,10 +11,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Find and Extract ZIP
+      - name: Extract Source ZIP
         run: |
-          echo "=== Repository ==="
-          ls -la
+          echo "=== FIND ZIP ==="
 
           ZIP_FILE="$(find . -type f -name "*.zip" | head -1)"
 
@@ -23,14 +22,14 @@ jobs:
             exit 1
           fi
 
-          echo "ZIP: $ZIP_FILE"
+          echo "Using: $ZIP_FILE"
 
           rm -rf extracted
-          mkdir extracted
+          mkdir -p extracted
 
           unzip -q "$ZIP_FILE" -d extracted
 
-          echo "=== Xcode Projects ==="
+          echo "=== XCODE PROJECTS ==="
           find extracted -type d -name "*.xcodeproj" -print
 
       - name: Select Xcode
@@ -48,11 +47,9 @@ jobs:
           fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "Project: $PROJECT"
+          echo "PROJECT = $PROJECT"
 
-          xcodebuild \
-            -project "$PROJECT" \
-            -list
+          xcodebuild -project "$PROJECT" -list
 
       - name: Detect Scheme
         run: |
@@ -71,9 +68,9 @@ jobs:
           fi
 
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          echo "Scheme: $SCHEME"
+          echo "SCHEME = $SCHEME"
 
-      - name: Build App
+      - name: Build HTVANTIX
         run: |
           xcodebuild \
             -project "$PROJECT" \
@@ -86,34 +83,37 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build
 
+      - name: Find APP
+        run: |
+          echo "=== APP ==="
+          find build -type d -name "*.app" -print
+
       - name: Create IPA
         run: |
-          echo "=== Find APP ==="
-
           APP="$(find build -type d -name "*.app" | head -1)"
 
           if [ -z "$APP" ]; then
-            echo "ERROR: ไม่พบ .app"
+            echo "ERROR: Build เสร็จแต่ไม่พบ .app"
             exit 1
           fi
 
-          echo "APP: $APP"
+          echo "Found: $APP"
 
           rm -rf Payload
-          mkdir Payload
+          mkdir -p Payload
 
           cp -R "$APP" Payload/
 
           /usr/bin/zip -qry \
-            3105-Phase3-unsigned.ipa \
+            HTVANTIX-unsigned.ipa \
             Payload
 
-          echo "=== IPA ==="
-          ls -lh 3105-Phase3-unsigned.ipa
+          echo "=== IPA CREATED ==="
+          ls -lh HTVANTIX-unsigned.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: 3105-Phase3-IPA
-          path: 3105-Phase3-unsigned.ipa
+          name: HTVANTIX-IPA
+          path: HTVANTIX-unsigned.ipa
           if-no-files-found: error
