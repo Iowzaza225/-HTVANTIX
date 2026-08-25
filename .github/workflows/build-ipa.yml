@@ -1,4 +1,4 @@
-name: Build HTVANTIX IPA
+name: Build 3105 HTVANTIX IPA
 
 on:
   workflow_dispatch:
@@ -23,7 +23,11 @@ jobs:
         run: |
           set -e
 
-          ZIP_FILE=$(find "$GITHUB_WORKSPACE" -maxdepth 2 -type f -name "*.zip" | head -n 1)
+          ZIP_FILE=$(find "$GITHUB_WORKSPACE" \
+            -maxdepth 2 \
+            -type f \
+            -name "*.zip" \
+            | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: No ZIP file found"
@@ -35,34 +39,59 @@ jobs:
           rm -rf "$GITHUB_WORKSPACE/extracted"
           mkdir -p "$GITHUB_WORKSPACE/extracted"
 
-          unzip -q "$ZIP_FILE" -d "$GITHUB_WORKSPACE/extracted"
+          unzip -q "$ZIP_FILE" \
+            -d "$GITHUB_WORKSPACE/extracted"
 
       - name: Find Xcode project
         run: |
           set -e
 
-          PROJECT=$(find "$GITHUB_WORKSPACE/extracted" -type d -name "*.xcodeproj" | head -n 1)
+          PROJECT=$(find "$GITHUB_WORKSPACE/extracted" \
+            -type d \
+            -name "*.xcodeproj" \
+            | head -n 1)
 
           if [ -z "$PROJECT" ]; then
             echo "ERROR: Xcode project not found"
+            find "$GITHUB_WORKSPACE/extracted" -maxdepth 5 -print
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$PROJECT")
           PROJECT_NAME=$(basename "$PROJECT")
 
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
 
           echo "Found project: $PROJECT"
 
-      - name: Show schemes
+      - name: Detect scheme
         run: |
+          set -e
+
           cd "$PROJECT_DIR"
 
+          echo "Available schemes:"
           xcodebuild \
             -project "$PROJECT_NAME" \
             -list
+
+          SCHEME=$(xcodebuild \
+            -project "$PROJECT_NAME" \
+            -list \
+            | awk '
+              /Schemes:/ {found=1; next}
+              found && NF {gsub(/^[ \t]+|[ \t]+$/, ""); print; exit}
+            ')
+
+          if [ -z "$SCHEME" ]; then
+            echo "ERROR: Scheme not found"
+            exit 1
+          fi
+
+          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+          echo "Using scheme: $SCHEME"
 
       - name: Check app token
         run: |
@@ -80,7 +109,7 @@ jobs:
 
           xcodebuild \
             -project "$PROJECT_NAME" \
-            -scheme HTVANTIX \
+            -scheme "$SCHEME" \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath "$GITHUB_WORKSPACE/build" \
@@ -103,11 +132,66 @@ jobs:
 
           if [ -z "$APP_PATH" ]; then
             echo "ERROR: .app not found"
+            find "$GITHUB_WORKSPACE/build" -name "*.app" -print || true
             exit 1
           fi
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
           echo "Found app: $APP_PATH"
+
+      - name: Fix Info.plist executable
+        run: |
+          set -e
+
+          PLIST="$APP_PATH/Info.plist"
+
+          if [ ! -f "$PLIST" ]; then
+            echo "ERROR: Info.plist not found"
+            exit 1
+          fi
+
+          EXECUTABLE_NAME=$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleExecutable" \
+            "$PLIST" 2>/dev/null || true)
+
+          if [ -z "$EXECUTABLE_NAME" ]; then
+            EXECUTABLE_NAME=$(basename "$APP_PATH" .app)
+
+            /usr/libexec/PlistBuddy \
+              -c "Add :CFBundleExecutable string $EXECUTABLE_NAME" \
+              "$PLIST"
+          fi
+
+          echo "CFBundleExecutable: $EXECUTABLE_NAME"
+
+      - name: App information
+        run: |
+          PLIST="$APP_PATH/Info.plist"
+
+          echo "Bundle ID:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleIdentifier" \
+            "$PLIST" || true
+
+          echo "Version:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleShortVersionString" \
+            "$PLIST" || true
+
+          echo "Build:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleVersion" \
+            "$PLIST" || true
+
+          echo "Executable:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleExecutable" \
+            "$PLIST" || true
+
+      - name: Remove old signing files
+        run: |
+          rm -rf "$APP_PATH/_CodeSignature"
+          rm -f "$APP_PATH/embedded.mobileprovision"
 
       - name: Create IPA
         run: |
@@ -116,21 +200,23 @@ jobs:
           rm -rf "$GITHUB_WORKSPACE/ipa"
           mkdir -p "$GITHUB_WORKSPACE/ipa/Payload"
 
-          cp -R "$APP_PATH" "$GITHUB_WORKSPACE/ipa/Payload/"
+          cp -R "$APP_PATH" \
+            "$GITHUB_WORKSPACE/ipa/Payload/"
 
           cd "$GITHUB_WORKSPACE/ipa"
 
           zip -qry \
-            "$GITHUB_WORKSPACE/HTVANTIX.ipa" \
+            "$GITHUB_WORKSPACE/3105_HTVANTIX.ipa" \
             Payload
 
-          ls -lh "$GITHUB_WORKSPACE/HTVANTIX.ipa"
+          echo "IPA created:"
+          ls -lh "$GITHUB_WORKSPACE/3105_HTVANTIX.ipa"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-IPA
-          path: HTVANTIX.ipa
+          name: 3105-HTVANTIX-IPA
+          path: 3105_HTVANTIX.ipa
           if-no-files-found: error
           retention-days: 30
 
@@ -138,7 +224,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-Build-Log
+          name: 3105-HTVANTIX-Build-Log
           path: xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
