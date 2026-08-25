@@ -1,4 +1,4 @@
-name: Build HTVANTIX Privacy IPA
+name: Build HTVANTIX Owner Visible Privacy IPA
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
         run: |
           set -e
 
-          SOURCE_ZIP="HTV811_PRIVACY_LINK_CLEAN.zip"
+          SOURCE_ZIP="HTV811_PRIVACY_OWNER_VISIBLE_FIX.zip"
 
           if [ ! -f "$SOURCE_ZIP" ]; then
             echo "ERROR: Missing $SOURCE_ZIP"
@@ -39,7 +39,7 @@ jobs:
           }
 
           test -f "$ROOT/HTVANTIX/Info.plist" || {
-            echo "ERROR: HTVANTIX/Info.plist not found"
+            echo "ERROR: Info.plist not found"
             exit 1
           }
 
@@ -258,7 +258,7 @@ jobs:
 
           cp -R "$APP_PATH" Payload/
 
-          IPA="HTVANTIX_PRIVACY_8.11_68_V41_unsigned.ipa"
+          IPA="HTVANTIX_OWNER_VISIBLE_8.11_68_V41_unsigned.ipa"
 
           rm -f "$IPA"
           zip -qry "$IPA" Payload
@@ -272,7 +272,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-privacy-build-log
+          name: HTVANTIX-owner-visible-build-log
           path: build.log
           if-no-files-found: ignore
 
@@ -280,6 +280,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-PRIVACY-IPA
-          path: HTVANTIX_PRIVACY_8.11_68_V41_unsigned.ipa
+          name: HTVANTIX-OWNER-VISIBLE-IPA
+          path: HTVANTIX_OWNER_VISIBLE_8.11_68_V41_unsigned.ipa
           if-no-files-found: error
