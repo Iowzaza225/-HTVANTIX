@@ -3,6 +3,13 @@ name: Build HTVANTIX IPA
 on:
   workflow_dispatch:
 
+  push:
+    branches:
+      - main
+    paths:
+      - "*.zip"
+      - ".github/workflows/**"
+
 jobs:
   build:
     runs-on: macos-latest
@@ -14,55 +21,84 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
 
-      - name: Show Xcode Version
+      - name: Xcode version
         run: |
           xcodebuild -version
           swift --version
 
-      - name: Find ZIP
+      - name: Find latest uploaded ZIP
         run: |
           set -e
 
-          ZIP_FILE=$(find "$GITHUB_WORKSPACE" \
-            -maxdepth 2 \
-            -type f \
-            -name "*.zip" \
-            | head -n 1)
+          echo "Checking ZIP from current commit..."
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "❌ ZIP NOT FOUND"
-            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f
+          ZIP_REL=$(git diff-tree \
+            --no-commit-id \
+            --name-only \
+            -r "$GITHUB_SHA" \
+            | grep -E '\.zip$' \
+            | head -n 1 || true)
+
+          if [ -z "$ZIP_REL" ]; then
+            echo "No ZIP in current commit."
+            echo "Finding most recently committed ZIP..."
+
+            ZIP_REL=$(git log \
+              --name-only \
+              --pretty=format: \
+              -- "*.zip" \
+              | grep -E '\.zip$' \
+              | head -n 1 || true)
+          fi
+
+          if [ -z "$ZIP_REL" ]; then
+            echo "ERROR: No ZIP found"
+            exit 1
+          fi
+
+          ZIP_FILE="$GITHUB_WORKSPACE/$ZIP_REL"
+
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ERROR: ZIP path does not exist:"
+            echo "$ZIP_FILE"
             exit 1
           fi
 
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-          echo "✅ ZIP: $ZIP_FILE"
 
-      - name: Extract ZIP
+          echo "========================================"
+          echo "THIS RUN WILL BUILD:"
+          echo "$ZIP_REL"
+          echo "========================================"
+
+      - name: Extract source
         run: |
           set -e
 
-          rm -rf "$GITHUB_WORKSPACE/source"
-          mkdir -p "$GITHUB_WORKSPACE/source"
+          rm -rf "$GITHUB_WORKSPACE/extracted"
+          mkdir -p "$GITHUB_WORKSPACE/extracted"
 
           unzip -q "$ZIP_FILE" \
-            -d "$GITHUB_WORKSPACE/source"
+            -d "$GITHUB_WORKSPACE/extracted"
 
-          echo "✅ ZIP EXTRACTED"
+          echo "Extracted:"
+          echo "$ZIP_FILE"
 
-      - name: Find Xcode Project
+      - name: Find Xcode project
         run: |
           set -e
 
-          PROJECT=$(find "$GITHUB_WORKSPACE/source" \
+          PROJECT=$(find "$GITHUB_WORKSPACE/extracted" \
             -type d \
             -name "*.xcodeproj" \
             | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "❌ XCODE PROJECT NOT FOUND"
-            find "$GITHUB_WORKSPACE/source" -maxdepth 6 -print
+            echo "ERROR: Xcode project not found"
+            find "$GITHUB_WORKSPACE/extracted" -maxdepth 6 -print
             exit 1
           fi
 
@@ -72,9 +108,10 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
 
-          echo "✅ PROJECT: $PROJECT"
+          echo "Project:"
+          echo "$PROJECT"
 
-      - name: Detect Scheme
+      - name: Detect scheme
         run: |
           set -e
 
@@ -97,25 +134,23 @@ jobs:
             ')
 
           if [ -z "$SCHEME" ]; then
-            echo "❌ SCHEME NOT FOUND"
+            echo "ERROR: Scheme not found"
             exit 1
           fi
 
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          echo "✅ SCHEME: $SCHEME"
+          echo "Scheme: $SCHEME"
 
-      - name: Check App Token
+      - name: Check token
         run: |
-          set -e
-
           if [ -z "$HTVANTIX_APP_TOKEN" ]; then
-            echo "❌ HTVANTIX_APP_TOKEN NOT FOUND"
+            echo "ERROR: HTVANTIX_APP_TOKEN is empty"
             exit 1
           fi
 
-          echo "✅ APP TOKEN FOUND"
+          echo "App token loaded"
 
-      - name: Build Release
+      - name: Build
         run: |
           set -o pipefail
 
@@ -135,7 +170,7 @@ jobs:
             clean build \
             | tee "$GITHUB_WORKSPACE/xcodebuild.log"
 
-      - name: Find Built APP
+      - name: Find app
         run: |
           set -e
 
@@ -146,41 +181,48 @@ jobs:
             | head -n 1)
 
           if [ -z "$APP_PATH" ]; then
-            echo "❌ APP NOT FOUND"
+            echo "ERROR: .app not found"
             exit 1
           fi
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
-          echo "✅ APP: $APP_PATH"
+          echo "APP: $APP_PATH"
 
-      - name: Set Bundle ID
+      - name: Fix final Info.plist
         run: |
           set -e
 
           PLIST="$APP_PATH/Info.plist"
 
-          if [ ! -f "$PLIST" ]; then
-            echo "❌ Info.plist NOT FOUND"
-            exit 1
-          fi
+          /usr/libexec/PlistBuddy \
+            -c "Delete :CFBundleIdentifier" \
+            "$PLIST" 2>/dev/null || true
 
           /usr/libexec/PlistBuddy \
-            -c "Set :CFBundleIdentifier $BUNDLE_ID" \
+            -c "Add :CFBundleIdentifier string $BUNDLE_ID" \
             "$PLIST"
 
-          echo "✅ BUNDLE ID:"
+          EXECUTABLE_NAME=$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleExecutable" \
+            "$PLIST" 2>/dev/null || true)
+
+          if [ -z "$EXECUTABLE_NAME" ]; then
+            EXECUTABLE_NAME=$(basename "$APP_PATH" .app)
+
+            /usr/libexec/PlistBuddy \
+              -c "Add :CFBundleExecutable string $EXECUTABLE_NAME" \
+              "$PLIST"
+          fi
+
+          echo "Bundle ID:"
           /usr/libexec/PlistBuddy \
             -c "Print :CFBundleIdentifier" \
             "$PLIST"
 
-      - name: Remove Old Signing
+      - name: Remove old signing
         run: |
-          set -e
-
           rm -rf "$APP_PATH/_CodeSignature"
           rm -f "$APP_PATH/embedded.mobileprovision"
-
-          echo "✅ OLD SIGNING REMOVED"
 
       - name: Create IPA
         run: |
@@ -202,8 +244,8 @@ jobs:
 
           echo "IPA_NAME=$IPA_NAME" >> "$GITHUB_ENV"
 
-          echo "✅ CREATED: $IPA_NAME"
-          ls -lh "$GITHUB_WORKSPACE/$IPA_NAME"
+          echo "Created:"
+          echo "$IPA_NAME"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
@@ -213,7 +255,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload Build Log
+      - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
