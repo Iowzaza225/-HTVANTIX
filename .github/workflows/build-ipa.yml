@@ -1,4 +1,4 @@
-name: Build HTV811 IPA
+name: Build HTV811 MobileHouseArrest IPA
 
 on:
   workflow_dispatch:
@@ -16,6 +16,7 @@ jobs:
 
     env:
       HTVANTIX_APP_TOKEN: ${{ secrets.HTVANTIX_APP_TOKEN }}
+      BUNDLE_ID: com.apple.mobile.MobileHouseArrest
 
     steps:
       - name: Checkout
@@ -60,14 +61,12 @@ jobs:
 
           if [ -z "$PROJECT" ]; then
             echo "ERROR: Xcode project not found"
-            find "$GITHUB_WORKSPACE/extracted" -maxdepth 6 -print
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$PROJECT")
           PROJECT_NAME=$(basename "$PROJECT")
 
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
 
@@ -103,6 +102,37 @@ jobs:
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
           echo "Using scheme: $SCHEME"
 
+      - name: Force Bundle ID
+        run: |
+          set -e
+
+          PBXPROJ=$(find "$PROJECT_DIR" \
+            -name "project.pbxproj" \
+            | head -n 1)
+
+          if [ -n "$PBXPROJ" ]; then
+            sed -i '' \
+              -E "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID;/g" \
+              "$PBXPROJ"
+          fi
+
+          PLIST=$(find "$PROJECT_DIR" \
+            -type f \
+            -name "Info.plist" \
+            | head -n 1)
+
+          if [ -n "$PLIST" ]; then
+            /usr/libexec/PlistBuddy \
+              -c "Delete :CFBundleIdentifier" \
+              "$PLIST" 2>/dev/null || true
+
+            /usr/libexec/PlistBuddy \
+              -c "Add :CFBundleIdentifier string $BUNDLE_ID" \
+              "$PLIST"
+          fi
+
+          echo "Bundle ID forced to: $BUNDLE_ID"
+
       - name: Inject app token
         run: |
           set -e
@@ -118,8 +148,6 @@ jobs:
             | head -n 1)
 
           if [ -n "$PLIST" ]; then
-            echo "Using Info.plist: $PLIST"
-
             /usr/libexec/PlistBuddy \
               -c "Delete :HTVANTIXAppToken" \
               "$PLIST" 2>/dev/null || true
@@ -141,6 +169,7 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath "$GITHUB_WORKSPACE/build" \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -160,23 +189,25 @@ jobs:
 
           if [ -z "$APP_PATH" ]; then
             echo "ERROR: .app not found"
-            find "$GITHUB_WORKSPACE/build" -name "*.app" -print || true
             exit 1
           fi
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
           echo "Found app: $APP_PATH"
 
-      - name: Fix Info.plist executable
+      - name: Fix final Info.plist
         run: |
           set -e
 
           PLIST="$APP_PATH/Info.plist"
 
-          if [ ! -f "$PLIST" ]; then
-            echo "ERROR: Info.plist not found"
-            exit 1
-          fi
+          /usr/libexec/PlistBuddy \
+            -c "Delete :CFBundleIdentifier" \
+            "$PLIST" 2>/dev/null || true
+
+          /usr/libexec/PlistBuddy \
+            -c "Add :CFBundleIdentifier string $BUNDLE_ID" \
+            "$PLIST"
 
           EXECUTABLE_NAME=$(/usr/libexec/PlistBuddy \
             -c "Print :CFBundleExecutable" \
@@ -190,31 +221,15 @@ jobs:
               "$PLIST"
           fi
 
-          echo "Executable: $EXECUTABLE_NAME"
-
-      - name: Show app information
-        run: |
-          PLIST="$APP_PATH/Info.plist"
-
-          echo "Bundle ID:"
+          echo "Final Bundle ID:"
           /usr/libexec/PlistBuddy \
             -c "Print :CFBundleIdentifier" \
-            "$PLIST" || true
-
-          echo "Version:"
-          /usr/libexec/PlistBuddy \
-            -c "Print :CFBundleShortVersionString" \
-            "$PLIST" || true
-
-          echo "Build:"
-          /usr/libexec/PlistBuddy \
-            -c "Print :CFBundleVersion" \
-            "$PLIST" || true
+            "$PLIST"
 
           echo "Executable:"
           /usr/libexec/PlistBuddy \
             -c "Print :CFBundleExecutable" \
-            "$PLIST" || true
+            "$PLIST"
 
       - name: Remove old signing files
         run: |
@@ -234,17 +249,16 @@ jobs:
           cd "$GITHUB_WORKSPACE/ipa"
 
           zip -qry \
-            "$GITHUB_WORKSPACE/HTV811.ipa" \
+            "$GITHUB_WORKSPACE/HTV811_MobileHouseArrest.ipa" \
             Payload
 
-          echo "IPA created:"
-          ls -lh "$GITHUB_WORKSPACE/HTV811.ipa"
+          ls -lh "$GITHUB_WORKSPACE/HTV811_MobileHouseArrest.ipa"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTV811-IPA
-          path: HTV811.ipa
+          name: HTV811-MobileHouseArrest-IPA
+          path: HTV811_MobileHouseArrest.ipa
           if-no-files-found: error
           retention-days: 30
 
