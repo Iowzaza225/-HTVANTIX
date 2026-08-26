@@ -2,6 +2,9 @@ name: HTVANTIX BUILD
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -20,233 +23,79 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           xcodebuild -version
 
-      - name: Check ZIP
+      - name: Prepare Source
         shell: bash
         run: |
+          set -e
           ZIP_FILE="./HTVANTIX_HARDENING_V2_SESSION_PERSIST_FIX.zip"
-
-          echo "===== ROOT FILES ====="
-          ls -lah
-
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: ไม่พบ $ZIP_FILE"
-            exit 1
-          fi
-
+          [ -f "$ZIP_FILE" ] || { echo "ERROR: ไม่พบ $ZIP_FILE"; exit 1; }
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-          echo "FOUND: $ZIP_FILE"
 
-      - name: Extract
-        shell: bash
-        run: |
           rm -rf source
           mkdir -p source
-
           unzip -q "$ZIP_FILE" -d source
 
-          echo "===== PROJECTS ====="
-          find source -type d -name "*.xcodeproj" -print
+          PROJECT="$(find source -type d -name '*.xcodeproj' -print -quit)"
+          [ -n "$PROJECT" ] || { echo "ERROR: ไม่พบ .xcodeproj"; exit 1; }
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+          echo "PROJECT: $PROJECT"
 
-      - name: Fix Duplicate Init
+          echo "SCHEME=3105" >> "$GITHUB_ENV"
+          echo "SCHEME: 3105"
+
+      - name: Fix Duplicate App Init
         shell: bash
         run: |
           python3 <<'PY'
           from pathlib import Path
           import re
 
-          app = Path("source/Client/ThreeOneOSFive/App.swift")
+          p = Path('source/Client/ThreeOneOSFive/App.swift')
+          if not p.exists():
+              raise SystemExit('ERROR: ไม่พบ App.swift')
 
-          if not app.exists():
-              raise SystemExit("ERROR: ไม่พบ App.swift")
+          s = p.read_text(encoding='utf-8')
+          m = re.search(r'@main\s+struct\s+\w+\s*:\s*App\s*\{', s)
+          if not m:
+              raise SystemExit('ERROR: ไม่พบ @main App')
 
-          text = app.read_text(encoding="utf-8")
+          start = m.end()
 
-          main = re.search(
-              r'@main\s+struct\s+\w+\s*:\s*App\s*\{',
-              text
-          )
+          def init_positions(text):
+              return [start + x.start() for x in re.finditer(r'\n\s*init\(\)\s*\{', text[start:])]
 
-          if not main:
-              raise SystemExit("ERROR: ไม่พบ @main App")
-
-          start = main.end()
-
-          while True:
-              tail = text[start:]
-
-              matches = list(
-                  re.finditer(
-                      r'\n\s*init\(\)\s*\{',
-                      tail
-                  )
-              )
-
-              if len(matches) <= 1:
-                  break
-
-              second_pos = start + matches[1].start()
-              brace_open = text.find("{", second_pos)
-
+          while len(init_positions(s)) > 1:
+              pos = init_positions(s)[1]
+              op = s.find('{', pos)
               depth = 0
               end = None
-
-              for i in range(brace_open, len(text)):
-                  if text[i] == "{":
-                      depth += 1
-
-                  elif text[i] == "}":
+              for i in range(op, len(s)):
+                  if s[i] == '{': depth += 1
+                  elif s[i] == '}':
                       depth -= 1
-
                       if depth == 0:
                           end = i + 1
                           break
-
               if end is None:
-                  raise SystemExit(
-                      "ERROR: หา end ของ init ไม่เจอ"
-                  )
+                  raise SystemExit('ERROR: init block ไม่สมบูรณ์')
+              s = s[:pos] + s[end:]
 
-              second_block = text[second_pos:end]
-
-              needs_antidebug = (
-                  "HTVAntiDebug.enforce()"
-                  in second_block
-              )
-
-              text = (
-                  text[:second_pos]
-                  + text[end:]
-              )
-
-              if needs_antidebug:
-                  tail = text[start:]
-
-                  first = re.search(
-                      r'\n\s*init\(\)\s*\{',
-                      tail
-                  )
-
-                  if first:
-                      first_pos = (
-                          start + first.start()
-                      )
-
-                      first_open = text.find(
-                          "{",
-                          first_pos
-                      )
-
-                      depth = 0
-                      first_end = None
-
-                      for i in range(
-                          first_open,
-                          len(text)
-                      ):
-                          if text[i] == "{":
-                              depth += 1
-
-                          elif text[i] == "}":
-                              depth -= 1
-
-                              if depth == 0:
-                                  first_end = i
-                                  break
-
-                      block = text[
-                          first_open:
-                          first_end + 1
-                      ]
-
-                      if (
-                          "HTVAntiDebug.enforce()"
-                          not in block
-                      ):
-                          text = (
-                              text[:first_open + 1]
-                              + "\n        HTVAntiDebug.enforce()"
-                              + text[first_open + 1:]
-                          )
-
-          app.write_text(
-              text,
-              encoding="utf-8"
-          )
-
-          print("INIT CHECK: PASS")
+          p.write_text(s, encoding='utf-8')
+          print('INIT CHECK: PASS')
           PY
 
-      - name: Find Project
+      - name: Verify Scheme
         shell: bash
         run: |
-          PROJECT="$(find source \
-            -type d \
-            -name "*.xcodeproj" \
-            -print -quit)"
-
-          if [ -z "$PROJECT" ]; then
-            echo "ERROR: ไม่พบ .xcodeproj"
-            exit 1
-          fi
-
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "PROJECT: $PROJECT"
-
-      - name: Detect Scheme
-        shell: bash
-        run: |
-          echo "===== XCODE LIST ====="
-
-          xcodebuild \
-            -project "$PROJECT" \
-            -list
-
-          SCHEME="$(xcodebuild \
-            -project "$PROJECT" \
-            -list 2>/dev/null |
-            awk '
-              /Schemes:/ {
-                flag=1
-                next
-              }
-
-              flag && NF {
-                gsub(
-                  /^[ \t]+|[ \t]+$/,
-                  ""
-                )
-                print
-                exit
-              }
-            ')"
-
-          if [ -z "$SCHEME" ]; then
-            echo "ERROR: ไม่พบ Scheme"
-            exit 1
-          fi
-
-          echo "SCHEME=$SCHEME" \
-            >> "$GITHUB_ENV"
-
-          echo "SCHEME: $SCHEME"
-
-      - name: Clean
-        shell: bash
-        run: |
-          rm -rf "$GITHUB_WORKSPACE/build"
-          rm -rf "$GITHUB_WORKSPACE/Payload"
-          rm -f "$GITHUB_WORKSPACE/HTVANTIX.ipa"
-          rm -f "$GITHUB_WORKSPACE/xcodebuild.log"
+          xcodebuild -project "$PROJECT" -list
+          echo "Using fixed scheme: $SCHEME"
 
       - name: Build HTVANTIX
         shell: bash
         run: |
           set -o pipefail
-
-          echo "===== BUILD ====="
-          echo "ZIP: $ZIP_FILE"
-          echo "PROJECT: $PROJECT"
-          echo "SCHEME: $SCHEME"
+          rm -rf "$GITHUB_WORKSPACE/build" "$GITHUB_WORKSPACE/Payload"
+          rm -f "$GITHUB_WORKSPACE/HTVANTIX.ipa" "$GITHUB_WORKSPACE/xcodebuild.log"
 
           xcodebuild \
             -project "$PROJECT" \
@@ -259,52 +108,22 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             clean build \
-            2>&1 | tee \
-            "$GITHUB_WORKSPACE/xcodebuild.log"
-
-      - name: Find App
-        shell: bash
-        run: |
-          APP_PATH="$(find \
-            "$GITHUB_WORKSPACE/build" \
-            -type d \
-            -path "*Release-iphoneos/*.app" \
-            -print -quit)"
-
-          if [ -z "$APP_PATH" ]; then
-            APP_PATH="$(find \
-              "$GITHUB_WORKSPACE/build" \
-              -type d \
-              -name "*.app" \
-              -print -quit)"
-          fi
-
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: ไม่พบ .app"
-            exit 1
-          fi
-
-          echo "APP_PATH=$APP_PATH" \
-            >> "$GITHUB_ENV"
-
-          echo "APP: $APP_PATH"
+            2>&1 | tee "$GITHUB_WORKSPACE/xcodebuild.log"
 
       - name: Create IPA
         shell: bash
         run: |
-          cd "$GITHUB_WORKSPACE"
+          APP_PATH="$(find "$GITHUB_WORKSPACE/build" -type d -path '*Release-iphoneos/*.app' -print -quit)"
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH="$(find "$GITHUB_WORKSPACE/build" -type d -name '*.app' -print -quit)"
+          fi
+          [ -n "$APP_PATH" ] || { echo "ERROR: ไม่พบ .app"; exit 1; }
 
+          cd "$GITHUB_WORKSPACE"
           rm -rf Payload
           mkdir -p Payload
-
           cp -R "$APP_PATH" Payload/
-
-          /usr/bin/zip \
-            -qry \
-            HTVANTIX.ipa \
-            Payload
-
-          echo "===== IPA ====="
+          /usr/bin/zip -qry HTVANTIX.ipa Payload
           ls -lh HTVANTIX.ipa
 
       - name: Upload IPA
@@ -320,12 +139,7 @@ jobs:
         shell: bash
         run: |
           if [ -f "$GITHUB_WORKSPACE/xcodebuild.log" ]; then
-            echo "===== ERRORS ====="
-
-            grep -n -i \
-              -E "error:|fatal error:|BUILD FAILED|SwiftCompile|CompileSwift" \
-              "$GITHUB_WORKSPACE/xcodebuild.log" \
-              | tail -200 || true
+            grep -n -i -E 'error:|fatal error:|BUILD FAILED|SwiftCompile|CompileSwift' "$GITHUB_WORKSPACE/xcodebuild.log" | tail -200 || true
           fi
 
       - name: Upload Build Log
