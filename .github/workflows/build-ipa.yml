@@ -17,7 +17,7 @@ jobs:
       - name: Find Source ZIP
         shell: bash
         run: |
-          ZIP_FILE="./HTVANTIX_PATCH_ORIGINAL_APPLY_RESTORED.zip"
+          ZIP_FILE="./HTVANTIX_BRANDING_LOGO_ALL_PAGES_UI_ONLY.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: ไม่พบ $ZIP_FILE"
