@@ -1,4 +1,4 @@
-name: HTVANTIX V3 Build
+name: HTVANTIX PREMIUM FINAL 01
 
 on:
   workflow_dispatch:
@@ -6,8 +6,8 @@ on:
     branches:
       - main
     paths:
-      - "HTVANTIX_DISPLAY_NAME_ONLY_FIX.zip"
-      - ".github/workflows/htvantix-v3.yml"
+      - "HTVANTIX_PREMIUM_FINAL_01.zip"
+      - ".github/workflows/htvantix-premium-final.yml"
 
 permissions:
   contents: read
@@ -26,10 +26,10 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           xcodebuild -version
 
-      - name: Check ZIP
+      - name: Check Source ZIP
         shell: bash
         run: |
-          ZIP_FILE="./HTVANTIX_DISPLAY_NAME_ONLY_FIX.zip"
+          ZIP_FILE="./HTVANTIX_PREMIUM_FINAL_01.zip"
 
           echo "===== ROOT FILES ====="
           ls -lah
@@ -40,7 +40,7 @@ jobs:
           fi
 
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-          echo "FOUND: $ZIP_FILE"
+          echo "FOUND ZIP: $ZIP_FILE"
 
       - name: Extract Source
         shell: bash
@@ -50,13 +50,19 @@ jobs:
 
           unzip -q "$ZIP_FILE" -d source
 
+          echo "===== PACKAGE MARKER ====="
+          cat source/HTVANTIX_PREMIUM_FINAL_01_MARKER.txt || true
+
           echo "===== XCODE PROJECTS ====="
           find source -type d -name "*.xcodeproj" -print
 
-      - name: Find Project
+      - name: Find Xcode Project
         shell: bash
         run: |
-          PROJECT="$(find source -type d -name "*.xcodeproj" -print -quit)"
+          PROJECT="$(find source \
+            -type d \
+            -name "*.xcodeproj" \
+            -print -quit)"
 
           if [ -z "$PROJECT" ]; then
             echo "ERROR: ไม่พบ .xcodeproj"
@@ -66,7 +72,7 @@ jobs:
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "PROJECT: $PROJECT"
 
-      - name: Find Target
+      - name: Detect Target
         shell: bash
         run: |
           xcodebuild \
@@ -80,8 +86,7 @@ jobs:
           with open("project.json", "r") as f:
               data = json.load(f)
 
-          project = data.get("project", {})
-          targets = project.get("targets", [])
+          targets = data.get("project", {}).get("targets", [])
 
           print("TARGETS:", targets)
 
@@ -100,16 +105,23 @@ jobs:
 
           echo "TARGET=$TARGET" >> "$GITHUB_ENV"
 
+      - name: Clean Build
+        shell: bash
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/build"
+          rm -rf "$GITHUB_WORKSPACE/Payload"
+          rm -f "$GITHUB_WORKSPACE/HTVANTIX-PREMIUM-FINAL-01.ipa"
+          rm -f "$GITHUB_WORKSPACE/xcodebuild.log"
+
       - name: Build Client
         shell: bash
         run: |
           set -o pipefail
 
-          echo "===== BUILD HTVANTIX ====="
-          echo "PROJECT: $PROJECT"
-          echo "TARGET : $TARGET"
-
-          rm -rf "$GITHUB_WORKSPACE/build"
+          echo "===== BUILD HTVANTIX PREMIUM FINAL 01 ====="
+          echo "ZIP     : $ZIP_FILE"
+          echo "PROJECT : $PROJECT"
+          echo "TARGET  : $TARGET"
 
           xcodebuild \
             -project "$PROJECT" \
@@ -126,6 +138,8 @@ jobs:
       - name: Find Built App
         shell: bash
         run: |
+          echo "===== SEARCH APP ====="
+
           APP_PATH="$(find "$GITHUB_WORKSPACE/build" \
             -type d \
             -path "*Release-iphoneos/*.app" \
@@ -146,19 +160,22 @@ jobs:
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
           echo "APP: $APP_PATH"
 
-      - name: Verify App Name
+      - name: Verify Built App
         shell: bash
         run: |
-          echo "===== APP INFO ====="
+          echo "===== BUILT APP INFO ====="
 
+          echo "Display Name:"
           /usr/libexec/PlistBuddy \
             -c "Print :CFBundleDisplayName" \
             "$APP_PATH/Info.plist" || true
 
+          echo "Bundle Name:"
           /usr/libexec/PlistBuddy \
             -c "Print :CFBundleName" \
             "$APP_PATH/Info.plist" || true
 
+          echo "Bundle Identifier:"
           /usr/libexec/PlistBuddy \
             -c "Print :CFBundleIdentifier" \
             "$APP_PATH/Info.plist" || true
@@ -175,24 +192,26 @@ jobs:
 
           /usr/bin/zip \
             -qry \
-            HTVANTIX-V3-unsigned.ipa \
+            HTVANTIX-PREMIUM-FINAL-01.ipa \
             Payload
 
-          ls -lh HTVANTIX-V3-unsigned.ipa
+          echo "===== IPA CREATED ====="
+          ls -lh HTVANTIX-PREMIUM-FINAL-01.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V3-IPA-${{ github.run_number }}
-          path: HTVANTIX-V3-unsigned.ipa
+          name: HTVANTIX-PREMIUM-FINAL-01-${{ github.run_number }}
+          path: HTVANTIX-PREMIUM-FINAL-01.ipa
           if-no-files-found: error
           retention-days: 7
 
-      - name: Show Build Errors
+      - name: Show Compiler Errors
         if: failure()
         shell: bash
         run: |
           if [ -f "$GITHUB_WORKSPACE/xcodebuild.log" ]; then
+            echo "===== COMPILER ERRORS ====="
             grep -n -i \
               -E "error:|fatal error:|BUILD FAILED|SwiftCompile|CompileSwift" \
               "$GITHUB_WORKSPACE/xcodebuild.log" \
@@ -203,6 +222,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V3-LOG-${{ github.run_number }}
+          name: HTVANTIX-PREMIUM-FINAL-01-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
+          retention-days: 7
