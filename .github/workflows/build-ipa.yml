@@ -17,13 +17,12 @@ jobs:
       - name: Find Source ZIP
         shell: bash
         run: |
-          ZIP_FILE="./HTVANTIX_SCREEN_SHARE_PATCH_PRIVACY_ONLY.zip"
-
-          echo "=== ZIP FILES ==="
-          find . -maxdepth 1 -type f -name "*.zip" -print
+          ZIP_FILE="./HTVANTIX_BRANDING_LOGO_ALL_PAGES_UI_ONLY.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: ไม่พบ $ZIP_FILE"
+            echo "=== ZIP FILES ==="
+            find . -maxdepth 1 -type f -name "*.zip" -print
             exit 1
           fi
 
@@ -63,7 +62,6 @@ jobs:
       - name: Detect Scheme
         shell: bash
         run: |
-          echo "=== PROJECT INFO ==="
           xcodebuild -project "$PROJECT" -list
 
           SCHEME="$(xcodebuild \
@@ -88,10 +86,6 @@ jobs:
         run: |
           set -o pipefail
 
-          echo "=== BUILD ==="
-          echo "Project: $PROJECT"
-          echo "Scheme: $SCHEME"
-
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
@@ -106,10 +100,7 @@ jobs:
       - name: Find Built App
         shell: bash
         run: |
-          APP="$(find "$GITHUB_WORKSPACE/build" \
-            -type d \
-            -name "*.app" \
-            | head -1)"
+          APP="$(find "$GITHUB_WORKSPACE/build" -type d -name "*.app" | head -1)"
 
           if [ -z "$APP" ]; then
             echo "ERROR: ไม่พบ .app"
@@ -127,10 +118,7 @@ jobs:
 
           cp -R "$APP" Payload/
 
-          /usr/bin/zip \
-            -qry \
-            HTVANTIX-unsigned.ipa \
-            Payload
+          /usr/bin/zip -qry HTVANTIX-unsigned.ipa Payload
 
           echo "=== IPA CREATED ==="
           ls -lh HTVANTIX-unsigned.ipa
