@@ -1,4 +1,4 @@
-name: HTVANTIX PREMIUM BUILD V4
+name: HTVANTIX SESSION FIX BUILD
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
       - name: Check ZIP
         shell: bash
         run: |
-          ZIP_FILE="./HTVANTIX_PREMIUM_FINAL_01.zip"
+          ZIP_FILE="./HTVANTIX_HARDENING_V2_SESSION_PERSIST_FIX.zip"
 
           echo "===== ROOT FILES ====="
           ls -lah
@@ -47,8 +47,8 @@ jobs:
 
           unzip -q "$ZIP_FILE" -d source
 
-          echo "===== MARKER ====="
-          cat source/HTVANTIX_PREMIUM_FINAL_01_MARKER.txt || true
+          echo "===== SESSION FIX MARKER ====="
+          cat source/SESSION_PERSIST_FIX_TH.txt || true
 
           echo "===== XCODE PROJECT ====="
           find source -type d -name "*.xcodeproj" -print
@@ -87,7 +87,7 @@ jobs:
         run: |
           rm -rf "$GITHUB_WORKSPACE/build"
           rm -rf "$GITHUB_WORKSPACE/Payload"
-          rm -f "$GITHUB_WORKSPACE/HTVANTIX-PREMIUM-V4.ipa"
+          rm -f "$GITHUB_WORKSPACE/HTVANTIX-SESSION-FIX.ipa"
           rm -f "$GITHUB_WORKSPACE/xcodebuild.log"
 
       - name: Build HTVANTIX
@@ -95,7 +95,7 @@ jobs:
         run: |
           set -o pipefail
 
-          echo "===== HTVANTIX PREMIUM BUILD V4 ====="
+          echo "===== HTVANTIX SESSION FIX BUILD ====="
           echo "ZIP     : $ZIP_FILE"
           echo "PROJECT : $PROJECT"
           echo "SCHEME  : $SCHEME"
@@ -154,16 +154,16 @@ jobs:
 
           cp -R "$APP_PATH" Payload/
 
-          /usr/bin/zip -qry HTVANTIX-PREMIUM-V4.ipa Payload
+          /usr/bin/zip -qry HTVANTIX-SESSION-FIX.ipa Payload
 
           echo "===== IPA CREATED ====="
-          ls -lh HTVANTIX-PREMIUM-V4.ipa
+          ls -lh HTVANTIX-SESSION-FIX.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-PREMIUM-V4-${{ github.run_number }}
-          path: HTVANTIX-PREMIUM-V4.ipa
+          name: HTVANTIX-SESSION-FIX-${{ github.run_number }}
+          path: HTVANTIX-SESSION-FIX.ipa
           if-no-files-found: error
           retention-days: 7
 
@@ -179,6 +179,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-PREMIUM-V4-LOG-${{ github.run_number }}
+          name: HTVANTIX-SESSION-FIX-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
