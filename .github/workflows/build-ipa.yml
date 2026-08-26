@@ -56,10 +56,7 @@ jobs:
       - name: Find Project
         shell: bash
         run: |
-          PROJECT="$(find source \
-            -type d \
-            -name "*.xcodeproj" \
-            -print -quit)"
+          PROJECT="$(find source -type d -name "*.xcodeproj" -print -quit)"
 
           if [ -z "$PROJECT" ]; then
             echo "ERROR: ไม่พบ Xcode Project"
@@ -69,37 +66,21 @@ jobs:
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "PROJECT: $PROJECT"
 
-      - name: Detect Target
+      - name: Detect Scheme
         shell: bash
         run: |
-          xcodebuild \
-            -project "$PROJECT" \
-            -list \
-            -json > project.json
+          echo "===== PROJECT INFO ====="
+          xcodebuild -project "$PROJECT" -list
 
-          python3 <<'PY'
-          import json
+          SCHEME="$(xcodebuild -project "$PROJECT" -list 2>/dev/null | awk '/Schemes:/{flag=1;next} flag && NF {gsub(/^[ \t]+|[ \t]+$/, ""); print; exit}')"
 
-          with open("project.json", "r") as f:
-              data = json.load(f)
+          if [ -z "$SCHEME" ]; then
+            echo "ERROR: ไม่พบ Scheme"
+            exit 1
+          fi
 
-          targets = data.get("project", {}).get("targets", [])
-
-          print("TARGETS:", targets)
-
-          if not targets:
-              raise SystemExit("ERROR: ไม่พบ Target")
-
-          target = "3105" if "3105" in targets else targets[0]
-
-          print("SELECTED TARGET:", target)
-
-          with open("target.txt", "w") as f:
-              f.write(target)
-          PY
-
-          TARGET="$(cat target.txt)"
-          echo "TARGET=$TARGET" >> "$GITHUB_ENV"
+          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+          echo "SCHEME: $SCHEME"
 
       - name: Clean
         shell: bash
@@ -117,13 +98,14 @@ jobs:
           echo "===== HTVANTIX PREMIUM BUILD V4 ====="
           echo "ZIP     : $ZIP_FILE"
           echo "PROJECT : $PROJECT"
-          echo "TARGET  : $TARGET"
+          echo "SCHEME  : $SCHEME"
 
           xcodebuild \
             -project "$PROJECT" \
-            -target "$TARGET" \
+            -scheme "$SCHEME" \
             -configuration Release \
             -sdk iphoneos \
+            -destination "generic/platform=iOS" \
             -derivedDataPath "$GITHUB_WORKSPACE/build" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -134,16 +116,10 @@ jobs:
       - name: Find Built App
         shell: bash
         run: |
-          APP_PATH="$(find "$GITHUB_WORKSPACE/build" \
-            -type d \
-            -path "*Release-iphoneos/*.app" \
-            -print -quit)"
+          APP_PATH="$(find "$GITHUB_WORKSPACE/build" -type d -path "*Release-iphoneos/*.app" -print -quit)"
 
           if [ -z "$APP_PATH" ]; then
-            APP_PATH="$(find "$GITHUB_WORKSPACE/build" \
-              -type d \
-              -name "*.app" \
-              -print -quit)"
+            APP_PATH="$(find "$GITHUB_WORKSPACE/build" -type d -name "*.app" -print -quit)"
           fi
 
           if [ -z "$APP_PATH" ]; then
@@ -160,19 +136,13 @@ jobs:
           echo "===== APP INFO ====="
 
           echo "Display Name:"
-          /usr/libexec/PlistBuddy \
-            -c "Print :CFBundleDisplayName" \
-            "$APP_PATH/Info.plist" || true
+          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$APP_PATH/Info.plist" || true
 
           echo "Bundle Name:"
-          /usr/libexec/PlistBuddy \
-            -c "Print :CFBundleName" \
-            "$APP_PATH/Info.plist" || true
+          /usr/libexec/PlistBuddy -c "Print :CFBundleName" "$APP_PATH/Info.plist" || true
 
           echo "Bundle ID:"
-          /usr/libexec/PlistBuddy \
-            -c "Print :CFBundleIdentifier" \
-            "$APP_PATH/Info.plist" || true
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist" || true
 
       - name: Create IPA
         shell: bash
@@ -184,10 +154,7 @@ jobs:
 
           cp -R "$APP_PATH" Payload/
 
-          /usr/bin/zip \
-            -qry \
-            HTVANTIX-PREMIUM-V4.ipa \
-            Payload
+          /usr/bin/zip -qry HTVANTIX-PREMIUM-V4.ipa Payload
 
           echo "===== IPA CREATED ====="
           ls -lh HTVANTIX-PREMIUM-V4.ipa
@@ -205,10 +172,7 @@ jobs:
         shell: bash
         run: |
           if [ -f "$GITHUB_WORKSPACE/xcodebuild.log" ]; then
-            grep -n -i \
-              -E "error:|fatal error:|BUILD FAILED|SwiftCompile|CompileSwift" \
-              "$GITHUB_WORKSPACE/xcodebuild.log" \
-              | tail -150 || true
+            grep -n -i -E "error:|fatal error:|BUILD FAILED|SwiftCompile|CompileSwift" "$GITHUB_WORKSPACE/xcodebuild.log" | tail -150 || true
           fi
 
       - name: Upload Build Log
