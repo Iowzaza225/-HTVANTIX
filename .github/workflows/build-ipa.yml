@@ -17,7 +17,7 @@ jobs:
       - name: Find Source ZIP
         shell: bash
         run: |
-          ZIP_FILE="./HTVANTIX_LICENSE_UI_ONLY.zip"
+          ZIP_FILE="./HTVANTIX_HOME_SETTINGS_UI_V2.zip"
 
           echo "=== ZIP FILES ==="
           find . -maxdepth 1 -type f -name "*.zip" -print
@@ -88,7 +88,7 @@ jobs:
         run: |
           set -o pipefail
 
-          echo "=== BUILD ==="
+          echo "=== BUILD HTVANTIX HOME SETTINGS UI V2 ==="
           echo "ZIP: $ZIP_FILE"
           echo "Project: $PROJECT"
           echo "Scheme: $SCHEME"
@@ -130,17 +130,17 @@ jobs:
 
           /usr/bin/zip \
             -qry \
-            HTVANTIX-unsigned.ipa \
+            HTVANTIX-HOME-SETTINGS-V2-unsigned.ipa \
             Payload
 
           echo "=== IPA CREATED ==="
-          ls -lh HTVANTIX-unsigned.ipa
+          ls -lh HTVANTIX-HOME-SETTINGS-V2-unsigned.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-LICENSE-UI-IPA
-          path: HTVANTIX-unsigned.ipa
+          name: HTVANTIX-HOME-SETTINGS-V2-IPA
+          path: HTVANTIX-HOME-SETTINGS-V2-unsigned.ipa
           if-no-files-found: error
 
       - name: Upload Build Log
