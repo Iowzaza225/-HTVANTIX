@@ -17,7 +17,7 @@ jobs:
       - name: Find Source ZIP
         shell: bash
         run: |
-          ZIP_FILE="./HTVANTIX_HOME_SETTINGS_UI_V2_BUILDFIX.zip"
+          ZIP_FILE="./HTVANTIX_NAME_ICON_HIDE_FILES.zip"
 
           echo "=== ZIP FILES ==="
           find . -maxdepth 1 -type f -name "*.zip" -print
