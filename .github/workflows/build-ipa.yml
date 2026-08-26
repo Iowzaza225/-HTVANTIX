@@ -17,7 +17,7 @@ jobs:
       - name: Find Source ZIP
         shell: bash
         run: |
-          ZIP_FILE="./HTVANTIX_HOME_SETTINGS_UI_V2.zip"
+          ZIP_FILE="./HTVANTIX_HOME_SETTINGS_UI_V2_BUILDFIX.zip"
 
           echo "=== ZIP FILES ==="
           find . -maxdepth 1 -type f -name "*.zip" -print
@@ -88,10 +88,10 @@ jobs:
         run: |
           set -o pipefail
 
-          echo "=== BUILD HTVANTIX HOME SETTINGS UI V2 ==="
+          echo "=== BUILD HTVANTIX ==="
           echo "ZIP: $ZIP_FILE"
-          echo "Project: $PROJECT"
-          echo "Scheme: $SCHEME"
+          echo "PROJECT: $PROJECT"
+          echo "SCHEME: $SCHEME"
 
           xcodebuild \
             -project "$PROJECT" \
@@ -118,7 +118,7 @@ jobs:
           fi
 
           echo "APP=$APP" >> "$GITHUB_ENV"
-          echo "Using app: $APP"
+          echo "Found app: $APP"
 
       - name: Create IPA
         shell: bash
@@ -130,18 +130,27 @@ jobs:
 
           /usr/bin/zip \
             -qry \
-            HTVANTIX-HOME-SETTINGS-V2-unsigned.ipa \
+            HTVANTIX-unsigned.ipa \
             Payload
 
           echo "=== IPA CREATED ==="
-          ls -lh HTVANTIX-HOME-SETTINGS-V2-unsigned.ipa
+          ls -lh HTVANTIX-unsigned.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-HOME-SETTINGS-V2-IPA
-          path: HTVANTIX-HOME-SETTINGS-V2-unsigned.ipa
+          name: HTVANTIX-IPA
+          path: HTVANTIX-unsigned.ipa
           if-no-files-found: error
+
+      - name: Show Compiler Errors
+        if: failure()
+        shell: bash
+        run: |
+          echo "=== COMPILER ERRORS ==="
+          grep -n -i \
+            -E "error:|fatal error:|BUILD FAILED|SwiftCompile" \
+            xcodebuild.log | tail -100 || true
 
       - name: Upload Build Log
         if: failure()
