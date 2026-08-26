@@ -5,9 +5,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "HTVANTIX_PREMIUM_FINAL_01.zip"
-      - ".github/workflows/htvantix-premium-v4.yml"
 
 permissions:
   contents: read
