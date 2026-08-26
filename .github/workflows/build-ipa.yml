@@ -2,127 +2,214 @@ name: Build HTVANTIX IPA
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    name: Build HTVANTIX
     runs-on: macos-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-      - name: Find Source ZIP
+      - name: Show Repository Files
         shell: bash
         run: |
-          ZIP_FILE="./HTVANTIX_DISPLAY_NAME_ONLY_FIX.zip"
+          echo "========== ROOT FILES =========="
+          pwd
+          ls -lah
 
-          echo "=== ZIP FILES ==="
+          echo ""
+          echo "========== ZIP FILES =========="
           find . -maxdepth 1 -type f -name "*.zip" -print
 
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: ไม่พบ $ZIP_FILE"
+      - name: Find HTVANTIX ZIP
+        shell: bash
+        run: |
+          ZIP_FILE="$(find . \
+            -maxdepth 1 \
+            -type f \
+            -name "HTVANTIX*.zip" \
+            -print0 \
+            | xargs -0 ls -t 2>/dev/null \
+            | head -1)"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: ไม่พบไฟล์ HTVANTIX*.zip ในหน้า root ของ repo"
             exit 1
           fi
 
-          echo "Using ZIP: $ZIP_FILE"
+          echo "FOUND ZIP: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-      - name: Extract Source
+      - name: Extract Source ZIP
         shell: bash
         run: |
-          rm -rf source
-          mkdir -p source
+          echo "Extracting: $ZIP_FILE"
 
-          unzip -q "$ZIP_FILE" -d source
+          rm -rf "$GITHUB_WORKSPACE/source"
+          mkdir -p "$GITHUB_WORKSPACE/source"
 
-          echo "=== XCODE PROJECTS ==="
-          find source -type d -name "*.xcodeproj" -print
+          unzip -q "$ZIP_FILE" \
+            -d "$GITHUB_WORKSPACE/source"
+
+          echo ""
+          echo "========== EXTRACTED =========="
+          find "$GITHUB_WORKSPACE/source" \
+            -maxdepth 3 \
+            -type d \
+            | head -100
 
       - name: Find Xcode Project
         shell: bash
         run: |
-          PROJECT="$(find source -type d -name "*.xcodeproj" | head -1)"
+          PROJECT="$(find "$GITHUB_WORKSPACE/source" \
+            -type d \
+            -name "*.xcodeproj" \
+            | head -1)"
 
           if [ -z "$PROJECT" ]; then
-            echo "ERROR: ไม่พบ .xcodeproj"
+            echo "ERROR: ไม่พบไฟล์ .xcodeproj"
             exit 1
           fi
 
+          echo "FOUND PROJECT: $PROJECT"
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "Found project: $PROJECT"
 
       - name: Select Xcode
         shell: bash
         run: |
-          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          sudo xcode-select \
+            -s /Applications/Xcode.app/Contents/Developer
+
+          echo "========== XCODE =========="
           xcodebuild -version
 
       - name: Detect Scheme
         shell: bash
         run: |
-          echo "=== PROJECT INFO ==="
-          xcodebuild -project "$PROJECT" -list
+          echo "========== PROJECT LIST =========="
+
+          xcodebuild \
+            -project "$PROJECT" \
+            -list
 
           SCHEME="$(xcodebuild \
             -project "$PROJECT" \
-            -list 2>/dev/null |
-            awk '/Schemes:/{flag=1;next} flag && NF {
-              gsub(/^[ \t]+|[ \t]+$/, "");
-              print;
-              exit
-            }')"
+            -list 2>/dev/null \
+            | awk '
+                /Schemes:/ {
+                  found=1
+                  next
+                }
+
+                found && NF {
+                  gsub(/^[ \t]+|[ \t]+$/, "")
+                  print
+                  exit
+                }
+              ')"
 
           if [ -z "$SCHEME" ]; then
             echo "ERROR: ไม่พบ Scheme"
             exit 1
           fi
 
+          echo "FOUND SCHEME: $SCHEME"
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          echo "Using scheme: $SCHEME"
+
+      - name: Clean Previous Build
+        shell: bash
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/build"
+          rm -rf "$GITHUB_WORKSPACE/Payload"
+          rm -f "$GITHUB_WORKSPACE/HTVANTIX-unsigned.ipa"
+          rm -f "$GITHUB_WORKSPACE/xcodebuild.log"
 
       - name: Build Client
         shell: bash
         run: |
           set -o pipefail
 
-          echo "=== BUILD HTVANTIX ==="
-          echo "ZIP: $ZIP_FILE"
-          echo "PROJECT: $PROJECT"
-          echo "SCHEME: $SCHEME"
+          echo "========== BUILD =========="
+          echo "ZIP     : $ZIP_FILE"
+          echo "PROJECT : $PROJECT"
+          echo "SCHEME  : $SCHEME"
 
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
             -configuration Release \
             -sdk iphoneos \
+            -destination "generic/platform=iOS" \
             -derivedDataPath "$GITHUB_WORKSPACE/build" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build 2>&1 | tee xcodebuild.log
+            clean build \
+            2>&1 | tee "$GITHUB_WORKSPACE/xcodebuild.log"
 
       - name: Find Built App
         shell: bash
         run: |
-          APP="$(find "$GITHUB_WORKSPACE/build" \
+          echo "========== BUILT APPS =========="
+
+          find "$GITHUB_WORKSPACE/build" \
             -type d \
             -name "*.app" \
+            -print
+
+          APP="$(find "$GITHUB_WORKSPACE/build" \
+            -type d \
+            -path "*Release-iphoneos/*.app" \
             | head -1)"
 
           if [ -z "$APP" ]; then
-            echo "ERROR: ไม่พบ .app"
+            APP="$(find "$GITHUB_WORKSPACE/build" \
+              -type d \
+              -name "*.app" \
+              | head -1)"
+          fi
+
+          if [ -z "$APP" ]; then
+            echo "ERROR: Build ผ่านแต่ไม่พบ .app"
             exit 1
           fi
 
+          echo "FOUND APP: $APP"
           echo "APP=$APP" >> "$GITHUB_ENV"
-          echo "Found app: $APP"
+
+      - name: Show Built App Info
+        shell: bash
+        run: |
+          echo "========== APP INFO =========="
+
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleDisplayName" \
+            "$APP/Info.plist" || true
+
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleName" \
+            "$APP/Info.plist" || true
+
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleIdentifier" \
+            "$APP/Info.plist" || true
 
       - name: Create IPA
         shell: bash
         run: |
+          cd "$GITHUB_WORKSPACE"
+
           rm -rf Payload
           mkdir -p Payload
 
@@ -133,29 +220,37 @@ jobs:
             HTVANTIX-unsigned.ipa \
             Payload
 
-          echo "=== IPA CREATED ==="
+          echo "========== IPA =========="
           ls -lh HTVANTIX-unsigned.ipa
 
-      - name: Upload IPA
+      - name: Upload HTVANTIX IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-IPA
+          name: HTVANTIX-IPA-${{ github.run_number }}
           path: HTVANTIX-unsigned.ipa
           if-no-files-found: error
+          retention-days: 7
 
-      - name: Show Compiler Errors
+      - name: Show Build Errors
         if: failure()
         shell: bash
         run: |
-          echo "=== COMPILER ERRORS ==="
-          grep -n -i \
-            -E "error:|fatal error:|BUILD FAILED|SwiftCompile" \
-            xcodebuild.log | tail -100 || true
+          echo "========== BUILD ERRORS =========="
+
+          if [ -f "$GITHUB_WORKSPACE/xcodebuild.log" ]; then
+            grep -n -i \
+              -E "error:|fatal error:|BUILD FAILED|SwiftCompile|CompileSwift" \
+              "$GITHUB_WORKSPACE/xcodebuild.log" \
+              | tail -150 || true
+          else
+            echo "ยังไม่มี xcodebuild.log"
+          fi
 
       - name: Upload Build Log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-Build-Log
+          name: HTVANTIX-BUILD-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
+          retention-days: 7
