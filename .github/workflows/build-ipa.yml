@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          ZIP_FILE="./HTVANTIX_EXTREME_HARDENING_V3_SERVER_NAME_SYNC.zip"
+          ZIP_FILE="./HTVANTIX_V4_AI_RESISTANT_TRIAL.zip"
           [ -f "$ZIP_FILE" ] || { echo "ERROR: ไม่พบ $ZIP_FILE"; exit 1; }
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
@@ -129,7 +129,7 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V3-NAME-SYNC-${{ github.run_number }}
+          name: HTVANTIX-V4-AI-RESISTANT-${{ github.run_number }}
           path: HTVANTIX.ipa
           if-no-files-found: error
           retention-days: 7
@@ -146,6 +146,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V3-NAME-SYNC-LOG-${{ github.run_number }}
+          name: HTVANTIX-V4-AI-RESISTANT-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
