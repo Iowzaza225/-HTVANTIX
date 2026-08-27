@@ -124,6 +124,24 @@ jobs:
               print('LAUNCH-KILL CALL NOT FOUND OR ALREADY DISABLED')
           PY
 
+      - name: Disable Privacy Shield For Crash Test
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          p = Path('source/Client/ThreeOneOSFive/App.swift')
+          s = p.read_text(encoding='utf-8')
+
+          target = '            .htvantixPrivacyShield()\n'
+          if target in s:
+              s = s.replace(target, '            // privacy shield disabled for crash isolation\n', 1)
+              p.write_text(s, encoding='utf-8')
+              print('PRIVACY SHIELD DISABLED: PASS')
+          else:
+              print('PRIVACY SHIELD CALL NOT FOUND OR ALREADY DISABLED')
+          PY
+
       - name: Verify Scheme
         shell: bash
         run: |
@@ -169,7 +187,7 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V4-CLEAN-${{ github.run_number }}
+          name: HTVANTIX-V4-NO-PRIVACY-SHIELD-${{ github.run_number }}
           path: HTVANTIX.ipa
           if-no-files-found: error
           retention-days: 7
@@ -186,6 +204,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V4-CLEAN-LOG-${{ github.run_number }}
+          name: HTVANTIX-V4-NO-PRIVACY-SHIELD-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
