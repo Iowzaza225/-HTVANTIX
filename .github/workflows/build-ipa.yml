@@ -27,8 +27,16 @@ jobs:
         shell: bash
         run: |
           set -e
-          ZIP_FILE="./HTVANTIX_V4_CLEAN_NO_GITHUB_UPDATE.zip"
-          [ -f "$ZIP_FILE" ] || { echo "ERROR: ไม่พบ $ZIP_FILE"; exit 1; }
+
+          ZIP_FILE="./HTVANTIX_V3_CLEAN_SERVER_NAME_SYNC.zip"
+
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ERROR: ไม่พบ $ZIP_FILE"
+            echo "=== ROOT FILES ==="
+            ls -lah
+            exit 1
+          fi
+
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
           rm -rf source
@@ -36,124 +44,32 @@ jobs:
           unzip -q "$ZIP_FILE" -d source
 
           PROJECT="$(find source -type d -name '*.xcodeproj' -print -quit)"
-          [ -n "$PROJECT" ] || { echo "ERROR: ไม่พบ .xcodeproj"; exit 1; }
+          if [ -z "$PROJECT" ]; then
+            echo "ERROR: ไม่พบ .xcodeproj"
+            exit 1
+          fi
+
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "PROJECT: $PROJECT"
-
           echo "SCHEME=3105" >> "$GITHUB_ENV"
+
+          echo "PROJECT: $PROJECT"
           echo "SCHEME: 3105"
-
-      - name: Fix Duplicate App Init
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-          import re
-
-          p = Path('source/Client/ThreeOneOSFive/App.swift')
-          if not p.exists():
-              raise SystemExit('ERROR: ไม่พบ App.swift')
-
-          s = p.read_text(encoding='utf-8')
-          m = re.search(r'@main\s+struct\s+\w+\s*:\s*App\s*\{', s)
-          if not m:
-              raise SystemExit('ERROR: ไม่พบ @main App')
-
-          start = m.end()
-
-          def init_positions(text):
-              return [start + x.start() for x in re.finditer(r'\n\s*init\(\)\s*\{', text[start:])]
-
-          while len(init_positions(s)) > 1:
-              pos = init_positions(s)[1]
-              op = s.find('{', pos)
-              depth = 0
-              end = None
-              for i in range(op, len(s)):
-                  if s[i] == '{': depth += 1
-                  elif s[i] == '}':
-                      depth -= 1
-                      if depth == 0:
-                          end = i + 1
-                          break
-              if end is None:
-                  raise SystemExit('ERROR: init block ไม่สมบูรณ์')
-              s = s[:pos] + s[end:]
-
-          p.write_text(s, encoding='utf-8')
-          print('INIT CHECK: PASS')
-          PY
-
-      - name: Fix V4 Vault Scope
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          p = Path('source/Client/ThreeOneOSFive/App.swift')
-          s = p.read_text(encoding='utf-8')
-
-          old = 'private enum HTVNetVaultV4'
-          new = 'enum HTVNetVaultV4'
-
-          if old in s:
-              s = s.replace(old, new, 1)
-              p.write_text(s, encoding='utf-8')
-              print('V4 VAULT SCOPE FIX: PASS')
-          elif new in s:
-              print('V4 VAULT SCOPE: ALREADY OK')
-          else:
-              print('HTVNetVaultV4 not present; continuing')
-          PY
-
-      - name: Disable Launch Kill
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          p = Path('source/Client/ThreeOneOSFive/App.swift')
-          s = p.read_text(encoding='utf-8')
-
-          target = '        HTVAntiDebug.enforce()\n'
-          if target in s:
-              s = s.replace(target, '        // launch-kill disabled for stability\n', 1)
-              p.write_text(s, encoding='utf-8')
-              print('LAUNCH-KILL DISABLED: PASS')
-          else:
-              print('LAUNCH-KILL CALL NOT FOUND OR ALREADY DISABLED')
-          PY
-
-      - name: Disable Privacy Shield For Crash Test
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          p = Path('source/Client/ThreeOneOSFive/App.swift')
-          s = p.read_text(encoding='utf-8')
-
-          target = '            .htvantixPrivacyShield()\n'
-          if target in s:
-              s = s.replace(target, '            // privacy shield disabled for crash isolation\n', 1)
-              p.write_text(s, encoding='utf-8')
-              print('PRIVACY SHIELD DISABLED: PASS')
-          else:
-              print('PRIVACY SHIELD CALL NOT FOUND OR ALREADY DISABLED')
-          PY
 
       - name: Verify Scheme
         shell: bash
         run: |
           xcodebuild -project "$PROJECT" -list
-          echo "Using fixed scheme: $SCHEME"
+          echo "Using scheme: $SCHEME"
 
       - name: Build HTVANTIX
         shell: bash
         run: |
           set -o pipefail
-          rm -rf "$GITHUB_WORKSPACE/build" "$GITHUB_WORKSPACE/Payload"
-          rm -f "$GITHUB_WORKSPACE/HTVANTIX.ipa" "$GITHUB_WORKSPACE/xcodebuild.log"
+
+          rm -rf "$GITHUB_WORKSPACE/build"
+          rm -rf "$GITHUB_WORKSPACE/Payload"
+          rm -f "$GITHUB_WORKSPACE/HTVANTIX.ipa"
+          rm -f "$GITHUB_WORKSPACE/xcodebuild.log"
 
           xcodebuild \
             -project "$PROJECT" \
@@ -172,22 +88,30 @@ jobs:
         shell: bash
         run: |
           APP_PATH="$(find "$GITHUB_WORKSPACE/build" -type d -path '*Release-iphoneos/*.app' -print -quit)"
+
           if [ -z "$APP_PATH" ]; then
             APP_PATH="$(find "$GITHUB_WORKSPACE/build" -type d -name '*.app' -print -quit)"
           fi
-          [ -n "$APP_PATH" ] || { echo "ERROR: ไม่พบ .app"; exit 1; }
+
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: ไม่พบ .app"
+            exit 1
+          fi
 
           cd "$GITHUB_WORKSPACE"
           rm -rf Payload
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
+
           /usr/bin/zip -qry HTVANTIX.ipa Payload
+
+          echo "=== IPA CREATED ==="
           ls -lh HTVANTIX.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V4-NO-PRIVACY-SHIELD-${{ github.run_number }}
+          name: HTVANTIX-V3-CLEAN-${{ github.run_number }}
           path: HTVANTIX.ipa
           if-no-files-found: error
           retention-days: 7
@@ -197,6 +121,7 @@ jobs:
         shell: bash
         run: |
           if [ -f "$GITHUB_WORKSPACE/xcodebuild.log" ]; then
+            echo "=== COMPILER ERRORS ==="
             grep -n -i -E 'error:|fatal error:|BUILD FAILED|SwiftCompile|CompileSwift' "$GITHUB_WORKSPACE/xcodebuild.log" | tail -200 || true
           fi
 
@@ -204,6 +129,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V4-NO-PRIVACY-SHIELD-LOG-${{ github.run_number }}
+          name: HTVANTIX-V3-CLEAN-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
