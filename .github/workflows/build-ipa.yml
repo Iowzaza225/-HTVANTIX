@@ -106,6 +106,24 @@ jobs:
               raise SystemExit('ERROR: ไม่พบ HTVNetVaultV4')
           PY
 
+      - name: Disable Launch Kill For Test
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          p = Path('source/Client/ThreeOneOSFive/App.swift')
+          s = p.read_text(encoding='utf-8')
+
+          target = '        HTVAntiDebug.enforce()\n'
+          if target in s:
+              s = s.replace(target, '        // HTVAntiDebug launch-kill disabled for stability test\n', 1)
+              p.write_text(s, encoding='utf-8')
+              print('LAUNCH-KILL DISABLED: PASS')
+          else:
+              print('LAUNCH-KILL CALL NOT FOUND OR ALREADY DISABLED')
+          PY
+
       - name: Verify Scheme
         shell: bash
         run: |
@@ -151,7 +169,7 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V4-AI-RESISTANT-${{ github.run_number }}
+          name: HTVANTIX-V4-STABILITY-TEST-${{ github.run_number }}
           path: HTVANTIX.ipa
           if-no-files-found: error
           retention-days: 7
@@ -168,6 +186,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V4-AI-RESISTANT-LOG-${{ github.run_number }}
+          name: HTVANTIX-V4-STABILITY-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
