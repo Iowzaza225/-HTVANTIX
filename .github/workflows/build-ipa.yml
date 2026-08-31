@@ -49,6 +49,21 @@ jobs:
             exit 1
           fi
 
+          INFO_PLIST="$(find source -type f -path '*/ThreeOneOSFive/Info.plist' -print -quit)"
+          if [ -z "$INFO_PLIST" ]; then
+            echo "ERROR: ไม่พบ Info.plist"
+            exit 1
+          fi
+
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.1.2" "$INFO_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 8" "$INFO_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :AppReleaseDisplayVersion 1.1.2" "$INFO_PLIST"
+
+          echo "=== VERSION GATE VALUES ==="
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$INFO_PLIST"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$INFO_PLIST"
+          /usr/libexec/PlistBuddy -c "Print :AppReleaseDisplayVersion" "$INFO_PLIST"
+
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "SCHEME=3105" >> "$GITHUB_ENV"
 
@@ -78,11 +93,26 @@ jobs:
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
             -derivedDataPath "$GITHUB_WORKSPACE/build" \
+            MARKETING_VERSION=1.1.2 \
+            CURRENT_PROJECT_VERSION=8 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             clean build \
             2>&1 | tee "$GITHUB_WORKSPACE/xcodebuild.log"
+
+      - name: Verify Built App Version
+        shell: bash
+        run: |
+          APP_PATH="$(find "$GITHUB_WORKSPACE/build" -type d -path '*Release-iphoneos/*.app' -print -quit)"
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: ไม่พบ .app สำหรับตรวจ version"
+            exit 1
+          fi
+          BUILT_PLIST="$APP_PATH/Info.plist"
+          echo "Built CFBundleShortVersionString: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$BUILT_PLIST")"
+          echo "Built CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$BUILT_PLIST")"
+          echo "Built AppReleaseDisplayVersion: $(/usr/libexec/PlistBuddy -c 'Print :AppReleaseDisplayVersion' "$BUILT_PLIST")"
 
       - name: Create IPA
         shell: bash
@@ -111,7 +141,7 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V1.1.2-BUILD8-ALL-FIX-${{ github.run_number }}
+          name: HTVANTIX-V1.1.2-BUILD8-426-FIX-${{ github.run_number }}
           path: HTVANTIX.ipa
           if-no-files-found: error
           retention-days: 7
@@ -129,6 +159,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V1.1.2-BUILD8-LOG-${{ github.run_number }}
+          name: HTVANTIX-V1.1.2-BUILD8-426-FIX-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
