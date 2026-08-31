@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          ZIP_FILE="./HTVANTIX_CLIENT_V1.1.2_BUILD8_CATALOG_ONLY_SAFE_FINAL.zip"
+          ZIP_FILE="./HTVANTIX_BASE_PLUS_LICENSE_VERSION_SAFE.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: ไม่พบ $ZIP_FILE"
@@ -41,8 +41,9 @@ jobs:
 
           PROJECT="$(find source -type d -name '*.xcodeproj' -print -quit)"
           INFO_PLIST="$(find source -type f -path '*/ThreeOneOSFive/Info.plist' -print -quit)"
+          APP_SWIFT="$(find source -type f -path '*/ThreeOneOSFive/App.swift' -print -quit)"
 
-          if [ -z "$PROJECT" ] || [ -z "$INFO_PLIST" ]; then
+          if [ -z "$PROJECT" ] || [ -z "$INFO_PLIST" ] || [ -z "$APP_SWIFT" ]; then
             echo "ERROR: source ไม่ครบ"
             exit 1
           fi
@@ -50,6 +51,31 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.1.2" "$INFO_PLIST"
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 8" "$INFO_PLIST"
           /usr/libexec/PlistBuddy -c "Set :AppReleaseDisplayVersion 1.1.2" "$INFO_PLIST"
+
+          python3 - "$APP_SWIFT" <<'PY'
+          import pathlib, sys
+          p = pathlib.Path(sys.argv[1])
+          s = p.read_text()
+          old = """    init() {\n        HTVAntiDebug.enforce()\n        setupLogCapture()"""
+          new = """    init() {\n        if #available(iOS 19.0, *) {\n            HTVAntiDebug.enforce()\n        }\n        setupLogCapture()"""
+          if old in s:
+              s = s.replace(old, new, 1)
+
+          anchor = """    private var language: AppLanguage {\n        AppLanguage(rawValue: languageCode) ?? .english\n    }\n"""
+          insert = """    private var language: AppLanguage {\n        AppLanguage(rawValue: languageCode) ?? .english\n    }\n\n    private var shouldUseCaptureProtection: Bool {\n        if #available(iOS 19.0, *) { return true }\n        return false\n    }\n"""
+          if "shouldUseCaptureProtection" not in s:
+              if anchor not in s:
+                  raise SystemExit("ERROR: language anchor not found")
+              s = s.replace(anchor, insert, 1)
+
+          if "if captureProtectionEnabled && shouldUseCaptureProtection {" not in s:
+              old_capture = "        if captureProtectionEnabled {"
+              if old_capture not in s:
+                  raise SystemExit("ERROR: capture branch not found")
+              s = s.replace(old_capture, "        if captureProtectionEnabled && shouldUseCaptureProtection {", 1)
+
+          p.write_text(s)
+          PY
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "SCHEME=3105" >> "$GITHUB_ENV"
@@ -114,7 +140,7 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V1.1.2-BUILD8-CATALOG-ONLY-SAFE-FINAL-${{ github.run_number }}
+          name: HTVANTIX-V1.1.2-BUILD8-BASE-LICENSE-IOS17-18-${{ github.run_number }}
           path: HTVANTIX.ipa
           if-no-files-found: error
           retention-days: 7
@@ -131,6 +157,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-CATALOG-ONLY-SAFE-FINAL-LOG-${{ github.run_number }}
+          name: HTVANTIX-BASE-LICENSE-IOS17-18-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
