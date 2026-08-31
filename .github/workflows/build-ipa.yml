@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          ZIP_FILE="./HTVANTIX_CLIENT_V1.1.2_BUILD8_ORIGINAL_WORKING_RESTORE.zip"
+          ZIP_FILE="./HTVANTIX_CLIENT_V1.1.2_BUILD8_CATALOG_ONLY_SAFE_FINAL.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: ไม่พบ $ZIP_FILE"
@@ -114,7 +114,7 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V1.1.2-BUILD8-ORIGINAL-WORKING-RESTORE-${{ github.run_number }}
+          name: HTVANTIX-V1.1.2-BUILD8-CATALOG-ONLY-SAFE-FINAL-${{ github.run_number }}
           path: HTVANTIX.ipa
           if-no-files-found: error
           retention-days: 7
@@ -131,6 +131,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-ORIGINAL-WORKING-RESTORE-LOG-${{ github.run_number }}
+          name: HTVANTIX-CATALOG-ONLY-SAFE-FINAL-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
