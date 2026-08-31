@@ -28,7 +28,7 @@ jobs:
         run: |
           set -e
 
-          ZIP_FILE="./HTVANTIX_CLIENT_V1.1.2_BUILD8_ALL_FIX.zip"
+          ZIP_FILE="./HTVANTIX_CLIENT_V1.1.2_BUILD8_CATALOG_DISPLAY_FIX.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: ไม่พบ $ZIP_FILE"
@@ -36,8 +36,6 @@ jobs:
             ls -lah
             exit 1
           fi
-
-          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
           rm -rf source
           mkdir -p source
@@ -59,207 +57,16 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 8" "$INFO_PLIST"
           /usr/libexec/PlistBuddy -c "Set :AppReleaseDisplayVersion 1.1.2" "$INFO_PLIST"
 
-          echo "=== VERSION GATE VALUES ==="
-          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$INFO_PLIST"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$INFO_PLIST"
-          /usr/libexec/PlistBuddy -c "Print :AppReleaseDisplayVersion" "$INFO_PLIST"
-
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "SCHEME=3105" >> "$GITHUB_ENV"
 
+          echo "=== SOURCE READY ==="
+          echo "ZIP: $ZIP_FILE"
           echo "PROJECT: $PROJECT"
           echo "SCHEME: 3105"
-
-      - name: Apply Catalog Display Fix
-        shell: bash
-        run: |
-          set -e
-          python3 <<'PY'
-          from pathlib import Path
-
-          root = Path('source')
-          app = next(root.rglob('ThreeOneOSFive/App.swift'))
-          view = next(root.rglob('ThreeOneOSFive/views/PatchProjectsView.swift'))
-
-          app_text = app.read_text()
-          old = '''    private var appVersion: String {
-              Bundle.main.object(forInfoDictionaryKey: "AppReleaseDisplayVersion") as? String
-                  ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-                  ?? "1.0"
-          }'''
-          new = '''    private var appVersion: String {
-              Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-                  ?? Bundle.main.object(forInfoDictionaryKey: "AppReleaseDisplayVersion") as? String
-                  ?? "1.0"
-          }'''
-          if old in app_text:
-              app.write_text(app_text.replace(old, new, 1))
-
-          text = view.read_text()
-
-          old = '''    private var serverVisibleItems: [PatchLibraryItem] {
-              let allowedPackageIDs = serverCatalog.visibleLocalPackageIDs
-              guard !allowedPackageIDs.isEmpty else { return [] }
-              return store.items.filter { item in
-                  guard allowedPackageIDs.contains(item.id) else { return false }
-                  guard let gameFilter else { return true }
-                  return serverCatalog.remoteItem(forLocalPackageID: item.id)?.game == gameFilter
-              }
-          }
-
-          private var filteredItems: [PatchLibraryItem] {
-              let categoryFiltered = serverVisibleItems.filter { item in
-                  guard selectedCategory != "all" else { return true }
-                  return serverCatalog.remoteItem(forLocalPackageID: item.id)?.category == selectedCategory
-              }
-              return categoryFiltered
-          }'''
-          new = '''    private var remoteVisibleItems: [PatchServerCatalog.RemoteItem] {
-              serverCatalog.items.filter { remote in
-                  if let gameFilter, remote.game != gameFilter { return false }
-                  if selectedCategory != "all", remote.category != selectedCategory { return false }
-                  return true
-              }
-          }
-
-          private func localItem(for remote: PatchServerCatalog.RemoteItem) -> PatchLibraryItem? {
-              guard let localID = serverCatalog.localPackageID(forRemoteID: remote.id) else { return nil }
-              return store.items.first(where: { $0.id == localID })
-          }'''
-          if old not in text:
-              raise SystemExit('catalog property block not found')
-          text = text.replace(old, new, 1)
-
-          text = text.replace('if let message = serverCatalog.errorMessage, serverVisibleItems.isEmpty {',
-                              'if let message = serverCatalog.errorMessage, serverCatalog.items.isEmpty {', 1)
-          text = text.replace('if serverVisibleItems.isEmpty && !store.isBusy && !serverCatalog.isLoading {',
-                              'if serverCatalog.items.isEmpty && !store.isBusy && !serverCatalog.isLoading {', 1)
-          text = text.replace('} else if filteredItems.isEmpty && !store.isBusy && !serverCatalog.isLoading {',
-                              '} else if remoteVisibleItems.isEmpty && !store.isBusy && !serverCatalog.isLoading {', 1)
-
-          old = '''                        Section {
-                              ForEach(filteredItems) { item in
-                                  patchToggleRow(item)
-                                      .listRowSeparator(.hidden)
-                                      .listRowBackground(Color.clear)
-                              }
-                          } header: {'''
-          new = '''                        Section {
-                              ForEach(remoteVisibleItems) { remote in
-                                  if let local = localItem(for: remote) {
-                                      patchToggleRow(local)
-                                          .listRowSeparator(.hidden)
-                                          .listRowBackground(Color.clear)
-                                  } else {
-                                      remoteCatalogRow(remote)
-                                          .listRowSeparator(.hidden)
-                                          .listRowBackground(Color.clear)
-                                  }
-                              }
-                          } header: {'''
-          if old not in text:
-              raise SystemExit('catalog list block not found')
-          text = text.replace(old, new, 1)
-
-          old = '''    @MainActor
-          private func refreshServerCatalog() async {
-              do {
-                  let remoteItems = try await serverCatalog.load()
-                  for remote in remoteItems {
-                      if let expectedID = UUID(uuidString: remote.id),
-                         serverCatalog.localPackageID(forRemoteID: remote.id) == expectedID,
-                         store.items.contains(where: { $0.id == expectedID }) {
-                          continue
-                      }
-                      let packageID = try await store.importRemotePackageSilently(
-                          from: serverCatalog.downloadURL(for: remote),
-                          headers: serverCatalog.requestHeaders,
-                          preferredPackageID: UUID(uuidString: remote.id)
-                      )
-                      serverCatalog.bind(remoteID: remote.id, to: packageID)
-                  }
-                  store.reload()
-                  serverCatalog.finishSync()
-                  syncActiveStates()
-              } catch {
-                  serverCatalog.finishSync(error: error)
-              }
-          }'''
-          new = '''    @MainActor
-          private func refreshServerCatalog() async {
-              do {
-                  _ = try await serverCatalog.load()
-                  store.reload()
-                  serverCatalog.finishSync()
-                  syncActiveStates()
-              } catch {
-                  serverCatalog.finishSync(error: error)
-              }
-          }'''
-          if old not in text:
-              raise SystemExit('refresh block not found')
-          text = text.replace(old, new, 1)
-
-          marker = '''    @ViewBuilder
-          private func patchToggleRow(_ item: PatchLibraryItem) -> some View {'''
-          remote_row = '''    @ViewBuilder
-          private func remoteCatalogRow(_ remote: PatchServerCatalog.RemoteItem) -> some View {
-              HStack(spacing: 14) {
-                  ZStack {
-                      RoundedRectangle(cornerRadius: 12, style: .continuous)
-                          .fill(AppTheme.accent.opacity(0.12))
-                          .frame(width: 46, height: 46)
-                      Image(systemName: "shippingbox")
-                          .font(.system(size: 20, weight: .semibold))
-                          .foregroundStyle(AppTheme.accent)
-                  }
-
-                  VStack(alignment: .leading, spacing: 4) {
-                      Text(remote.name)
-                          .font(.body.weight(.semibold))
-                          .foregroundStyle(.primary)
-                          .lineLimit(1)
-
-                      HStack(spacing: 5) {
-                          Text(serverCatalog.gameTitle(remote.game))
-                          Text("•")
-                          Text(serverCatalog.categoryTitle(remote.category))
-                      }
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                      .lineLimit(1)
-
-                      if !remote.description.isEmpty {
-                          Text(remote.description)
-                              .font(.caption2)
-                              .foregroundStyle(.secondary)
-                              .lineLimit(1)
-                      }
-                  }
-
-                  Spacer(minLength: 10)
-
-                  Text("v\\(remote.version)")
-                      .font(.caption2.monospacedDigit())
-                      .foregroundStyle(.secondary)
-              }
-              .padding(.vertical, 10)
-              .padding(.horizontal, 14)
-              .background(
-                  RoundedRectangle(cornerRadius: 18, style: .continuous)
-                      .fill(AppTheme.cardBackground)
-              )
-              .padding(.vertical, 3)
-          }
-
-          @ViewBuilder
-          private func patchToggleRow(_ item: PatchLibraryItem) -> some View {'''
-          if marker not in text:
-              raise SystemExit('row marker not found')
-          text = text.replace(marker, remote_row, 1)
-          view.write_text(text)
-          print('Catalog display fix applied:', view)
-          PY
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$INFO_PLIST"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$INFO_PLIST"
+          /usr/libexec/PlistBuddy -c "Print :AppReleaseDisplayVersion" "$INFO_PLIST"
 
       - name: Verify Scheme
         shell: bash
@@ -323,10 +130,7 @@ jobs:
           rm -rf Payload
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
-
           /usr/bin/zip -qry HTVANTIX.ipa Payload
-
-          echo "=== IPA CREATED ==="
           ls -lh HTVANTIX.ipa
 
       - name: Upload IPA
