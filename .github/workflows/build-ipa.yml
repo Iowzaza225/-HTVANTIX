@@ -1,4 +1,4 @@
-name: VIPERXMOD BUILD
+name: HTVANTIX BUILD
 
 on:
   workflow_dispatch:
@@ -20,35 +20,50 @@ jobs:
       - name: Select Xcode
         shell: bash
         run: |
+          set -euo pipefail
           sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           xcodebuild -version
 
       - name: Prepare Source
         shell: bash
         run: |
-          set -e
-          ZIP_FILE="./VIPERXMOD_SOURCE_V1.0.0_BUILD1_BLACK_RED_MULTIAPP.zip"
+          set -euo pipefail
+          ZIP_FILE="./HTVANTIX_V1.1.2_BUILD8_MOTION_UI_SAFE_SOURCE.zip"
           test -f "$ZIP_FILE" || { echo "ERROR: ไม่พบ $ZIP_FILE"; ls -lah; exit 1; }
-          rm -rf source && mkdir -p source
+
+          rm -rf source
+          mkdir -p source
           unzip -q "$ZIP_FILE" -d source
+
           PROJECT="$(find source -type d -name '*.xcodeproj' -print -quit)"
           INFO_PLIST="$(find source -type f -path '*/ThreeOneOSFive/Info.plist' -print -quit)"
-          test -n "$PROJECT" && test -n "$INFO_PLIST" || { echo "ERROR: source ไม่ครบ"; exit 1; }
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0.0" "$INFO_PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1" "$INFO_PLIST"
-          /usr/libexec/PlistBuddy -c "Set :AppReleaseDisplayVersion 1.0.0" "$INFO_PLIST"
+          test -n "$PROJECT" && test -n "$INFO_PLIST" || { echo "ERROR: source ไม่ครบ"; find source -maxdepth 4 -print; exit 1; }
+
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName HTVANTIX" "$INFO_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.1.2" "$INFO_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 8" "$INFO_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :AppReleaseDisplayVersion 1.1.2" "$INFO_PLIST" || true
+
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "SCHEME=3105" >> "$GITHUB_ENV"
+          echo "INFO_PLIST=$INFO_PLIST" >> "$GITHUB_ENV"
+
+          echo "PROJECT=$PROJECT"
+          echo "INFO_PLIST=$INFO_PLIST"
 
       - name: Verify Scheme
-        run: xcodebuild -project "$PROJECT" -list
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -project "$PROJECT" -list
 
-      - name: Build VIPERXMOD
+      - name: Build HTVANTIX
         shell: bash
         run: |
           set -o pipefail
           rm -rf "$GITHUB_WORKSPACE/build" "$GITHUB_WORKSPACE/Payload"
-          rm -f "$GITHUB_WORKSPACE/VIPERXMOD.ipa" "$GITHUB_WORKSPACE/xcodebuild.log"
+          rm -f "$GITHUB_WORKSPACE/HTVANTIX_V1.1.2_BUILD8_unsigned.ipa" "$GITHUB_WORKSPACE/xcodebuild.log"
+
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
@@ -56,8 +71,9 @@ jobs:
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
             -derivedDataPath "$GITHUB_WORKSPACE/build" \
-            MARKETING_VERSION=1.0.0 \
-            CURRENT_PROJECT_VERSION=1 \
+            MARKETING_VERSION=1.1.2 \
+            CURRENT_PROJECT_VERSION=8 \
+            PRODUCT_NAME=HTVANTIX \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -66,19 +82,22 @@ jobs:
       - name: Create IPA
         shell: bash
         run: |
+          set -euo pipefail
           APP_PATH="$(find "$GITHUB_WORKSPACE/build" -type d -path '*Release-iphoneos/*.app' -print -quit)"
-          test -n "$APP_PATH" || { echo "ERROR: ไม่พบ .app"; exit 1; }
+          test -n "$APP_PATH" || { echo "ERROR: ไม่พบ .app"; find "$GITHUB_WORKSPACE/build" -maxdepth 7 -print; exit 1; }
+
           cd "$GITHUB_WORKSPACE"
+          rm -rf Payload
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
-          /usr/bin/zip -qry VIPERXMOD.ipa Payload
-          ls -lh VIPERXMOD.ipa
+          /usr/bin/zip -qry HTVANTIX_V1.1.2_BUILD8_unsigned.ipa Payload
+          ls -lh HTVANTIX_V1.1.2_BUILD8_unsigned.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: VIPERXMOD-V1.0.0-BUILD1-${{ github.run_number }}
-          path: VIPERXMOD.ipa
+          name: HTVANTIX-V1.1.2-BUILD8-IPA-${{ github.run_number }}
+          path: HTVANTIX_V1.1.2_BUILD8_unsigned.ipa
           if-no-files-found: error
           retention-days: 7
 
@@ -87,13 +106,14 @@ jobs:
         shell: bash
         run: |
           if [ -f "$GITHUB_WORKSPACE/xcodebuild.log" ]; then
-            grep -n -i -E 'error:|fatal error:|BUILD FAILED|SwiftCompile|CompileSwift' "$GITHUB_WORKSPACE/xcodebuild.log" | tail -200 || true
+            grep -n -i -E 'error:|fatal error:|BUILD FAILED|SwiftCompile|CompileSwift|Ld ' "$GITHUB_WORKSPACE/xcodebuild.log" | tail -250 || true
           fi
 
       - name: Upload Build Log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: VIPERXMOD-BUILD-LOG-${{ github.run_number }}
+          name: HTVANTIX-BUILD-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
+          retention-days: 7
