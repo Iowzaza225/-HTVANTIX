@@ -1,0 +1,107 @@
+--- a/ThreeOneOSFive/App.swift
++++ b/ThreeOneOSFive/App.swift
+@@ -341,6 +341,39 @@
+         isAuthorized = false
+     }
+ 
++    /// Rebuild only the short client session used by catalog/download APIs.
++    /// This is intentionally separate from normal activation so a transient
++    /// 401 does not force the user back through the key screen.
++    @discardableResult
++    func recoverClientSession() async -> Bool {
++        clearSessionOnly()
++
++        if let licenseToken = defaults.string(forKey: "htvantix.license.token"),
++           tokenIsUsable(licenseToken) {
++            do {
++                try await createClientSession(licenseToken: licenseToken)
++                isAuthorized = true
++                message = ""
++                return true
++            } catch {
++                clearSessionOnly()
++            }
++        }
++
++        if !storedKey.isEmpty {
++            do {
++                try await redeemAndCreateSession(key: storedKey, showBusy: false)
++                return isAuthorized
++            } catch {
++                clearSessionOnly()
++                isAuthorized = false
++                message = error.localizedDescription
++            }
++        }
++
++        return false
++    }
++
+     func activate(key rawKey: String) async {
+         let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
+         guard !key.isEmpty else { return }
+@@ -556,6 +589,8 @@
+     @State private var keyInput = ""
+     @State private var revealContent = false
+     @State private var ambientMotion = false
++    @State private var errorShake = false
++    @State private var actionGlow = false
+     @FocusState private var keyFocused: Bool
+ 
+     var body: some View {
+@@ -585,7 +620,8 @@
+                             RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                 .stroke(Color.cyan.opacity(0.35), lineWidth: 1)
+                         )
+-                        .shadow(color: Color.cyan.opacity(ambientMotion && !reduceMotion ? 0.28 : 0.14), radius: ambientMotion && !reduceMotion ? 28 : 18)
++                        .shadow(color: Color.cyan.opacity(ambientMotion && !reduceMotion ? 0.34 : 0.14), radius: ambientMotion && !reduceMotion ? 32 : 18)
++                        .scaleEffect(ambientMotion && !reduceMotion ? 1.025 : 0.995)
+                         .offset(y: ambientMotion && !reduceMotion ? -3 : 1)
+                         .motionEntrance(active: revealContent, delay: 0.03)
+ 
+@@ -626,6 +662,9 @@
+                             )
+                             .foregroundStyle(.white)
+                             .focused($keyFocused)
++                            .shadow(color: Color.cyan.opacity(keyFocused ? 0.22 : 0.0), radius: keyFocused ? 16 : 0)
++                            .offset(x: errorShake && !reduceMotion ? 7 : 0)
++                            .animation(.spring(response: 0.18, dampingFraction: 0.35), value: errorShake)
+ 
+                         Button {
+                             keyFocused = false
+@@ -648,6 +687,7 @@
+                             Color.cyan,
+                             in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                         )
++                        .shadow(color: Color.cyan.opacity(actionGlow && !reduceMotion ? 0.34 : 0.14), radius: actionGlow && !reduceMotion ? 18 : 8)
+                         .disabled(
+                             licenseManager.isBusy ||
+                             keyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+@@ -663,6 +703,7 @@
+                                 .font(.caption)
+                                 .foregroundStyle(.orange)
+                                 .multilineTextAlignment(.center)
++                                .transition(.opacity.combined(with: .move(edge: .top)))
+                         }
+                     }
+                     .padding(.horizontal, 28)
+@@ -692,6 +733,19 @@
+             withAnimation(.easeInOut(duration: 4.8).repeatForever(autoreverses: true)) {
+                 ambientMotion = true
+             }
++            withAnimation(.easeInOut(duration: 1.35).repeatForever(autoreverses: true)) {
++                actionGlow = true
++            }
++        }
++        .onChange(of: licenseManager.message) { newValue in
++            guard !newValue.isEmpty, !licenseManager.isAuthorized else { return }
++            let generator = UINotificationFeedbackGenerator()
++            generator.notificationOccurred(.error)
++            guard !reduceMotion else { return }
++            errorShake.toggle()
++            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
++                errorShake.toggle()
++            }
+         }
+     }
+ }
