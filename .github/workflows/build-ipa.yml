@@ -52,31 +52,6 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1" "$INFO_PLIST"
           /usr/libexec/PlistBuddy -c "Set :AppReleaseDisplayVersion 1.0.0" "$INFO_PLIST"
 
-          python3 - "$APP_SWIFT" <<'PY'
-          import pathlib, sys
-          p = pathlib.Path(sys.argv[1])
-          s = p.read_text()
-          old = """    init() {\n        HTVAntiDebug.enforce()\n        setupLogCapture()"""
-          new = """    init() {\n        if #available(iOS 19.0, *) {\n            HTVAntiDebug.enforce()\n        }\n        setupLogCapture()"""
-          if old in s:
-              s = s.replace(old, new, 1)
-
-          anchor = """    private var language: AppLanguage {\n        AppLanguage(rawValue: languageCode) ?? .english\n    }\n"""
-          insert = """    private var language: AppLanguage {\n        AppLanguage(rawValue: languageCode) ?? .english\n    }\n\n    private var shouldUseCaptureProtection: Bool {\n        if #available(iOS 19.0, *) { return true }\n        return false\n    }\n"""
-          if "shouldUseCaptureProtection" not in s:
-              if anchor not in s:
-                  raise SystemExit("ERROR: language anchor not found")
-              s = s.replace(anchor, insert, 1)
-
-          if "if captureProtectionEnabled && shouldUseCaptureProtection {" not in s:
-              old_capture = "        if captureProtectionEnabled {"
-              if old_capture not in s:
-                  raise SystemExit("ERROR: capture branch not found")
-              s = s.replace(old_capture, "        if captureProtectionEnabled && shouldUseCaptureProtection {", 1)
-
-          p.write_text(s)
-          PY
-
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "SCHEME=3105" >> "$GITHUB_ENV"
 
