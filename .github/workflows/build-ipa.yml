@@ -39,6 +39,17 @@ jobs:
           INFO_PLIST="$(find source -type f -path '*/ThreeOneOSFive/Info.plist' -print -quit)"
           test -n "$PROJECT" && test -n "$INFO_PLIST" || { echo "ERROR: source ไม่ครบ"; find source -maxdepth 4 -print; exit 1; }
 
+          ROOT="$(dirname "$PROJECT")"
+          echo "ROOT=$ROOT"
+
+          if compgen -G "$GITHUB_WORKSPACE/patches/*.patch" > /dev/null; then
+            echo "===== APPLY HTVANTIX V2 PATCHES ====="
+            for PATCH_FILE in "$GITHUB_WORKSPACE"/patches/*.patch; do
+              echo "Applying $(basename "$PATCH_FILE")"
+              patch --batch --forward -p1 -d "$ROOT" < "$PATCH_FILE"
+            done
+          fi
+
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName HTVANTIX" "$INFO_PLIST"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.1.2" "$INFO_PLIST"
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 8" "$INFO_PLIST"
