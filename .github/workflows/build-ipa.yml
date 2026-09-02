@@ -41,9 +41,8 @@ jobs:
 
           PROJECT="$(find source -type d -name '*.xcodeproj' -print -quit)"
           INFO_PLIST="$(find source -type f -path '*/ThreeOneOSFive/Info.plist' -print -quit)"
-          APP_SWIFT="$(find source -type f -path '*/ThreeOneOSFive/App.swift' -print -quit)"
 
-          if [ -z "$PROJECT" ] || [ -z "$INFO_PLIST" ] || [ -z "$APP_SWIFT" ]; then
+          if [ -z "$PROJECT" ] || [ -z "$INFO_PLIST" ]; then
             echo "ERROR: source ไม่ครบ"
             exit 1
           fi
