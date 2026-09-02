@@ -28,37 +28,20 @@ jobs:
         run: |
           set -e
           ZIP_FILE="./VIPERXMOD_SOURCE_V1.0.0_BUILD1_BLACK_RED_MULTIAPP.zip"
-
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: ไม่พบ $ZIP_FILE"
-            ls -lah
-            exit 1
-          fi
-
-          rm -rf source
-          mkdir -p source
+          test -f "$ZIP_FILE" || { echo "ERROR: ไม่พบ $ZIP_FILE"; ls -lah; exit 1; }
+          rm -rf source && mkdir -p source
           unzip -q "$ZIP_FILE" -d source
-
           PROJECT="$(find source -type d -name '*.xcodeproj' -print -quit)"
           INFO_PLIST="$(find source -type f -path '*/ThreeOneOSFive/Info.plist' -print -quit)"
-
-          if [ -z "$PROJECT" ] || [ -z "$INFO_PLIST" ]; then
-            echo "ERROR: source ไม่ครบ"
-            exit 1
-          fi
-
+          test -n "$PROJECT" && test -n "$INFO_PLIST" || { echo "ERROR: source ไม่ครบ"; exit 1; }
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0.0" "$INFO_PLIST"
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1" "$INFO_PLIST"
           /usr/libexec/PlistBuddy -c "Set :AppReleaseDisplayVersion 1.0.0" "$INFO_PLIST"
-
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "SCHEME=3105" >> "$GITHUB_ENV"
 
       - name: Verify Scheme
-        shell: bash
-        run: |
-          xcodebuild -project "$PROJECT" -list
-          echo "Using scheme: $SCHEME"
+        run: xcodebuild -project "$PROJECT" -list
 
       - name: Build VIPERXMOD
         shell: bash
@@ -66,7 +49,6 @@ jobs:
           set -o pipefail
           rm -rf "$GITHUB_WORKSPACE/build" "$GITHUB_WORKSPACE/Payload"
           rm -f "$GITHUB_WORKSPACE/VIPERXMOD.ipa" "$GITHUB_WORKSPACE/xcodebuild.log"
-
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
@@ -79,33 +61,14 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            clean build \
-            2>&1 | tee "$GITHUB_WORKSPACE/xcodebuild.log"
-
-      - name: Verify Built App Version
-        shell: bash
-        run: |
-          APP_PATH="$(find "$GITHUB_WORKSPACE/build" -type d -path '*Release-iphoneos/*.app' -print -quit)"
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: ไม่พบ .app"
-            exit 1
-          fi
-          BUILT_PLIST="$APP_PATH/Info.plist"
-          echo "Version: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$BUILT_PLIST")"
-          echo "Build: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$BUILT_PLIST")"
-          echo "Display: $(/usr/libexec/PlistBuddy -c 'Print :AppReleaseDisplayVersion' "$BUILT_PLIST")"
+            clean build 2>&1 | tee "$GITHUB_WORKSPACE/xcodebuild.log"
 
       - name: Create IPA
         shell: bash
         run: |
           APP_PATH="$(find "$GITHUB_WORKSPACE/build" -type d -path '*Release-iphoneos/*.app' -print -quit)"
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: ไม่พบ .app"
-            exit 1
-          fi
-
+          test -n "$APP_PATH" || { echo "ERROR: ไม่พบ .app"; exit 1; }
           cd "$GITHUB_WORKSPACE"
-          rm -rf Payload
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
           /usr/bin/zip -qry VIPERXMOD.ipa Payload
