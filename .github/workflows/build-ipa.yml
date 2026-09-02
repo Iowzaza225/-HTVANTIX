@@ -1,4 +1,4 @@
-name: HTVANTIX BUILD
+name: VIPERXMOD BUILD
 
 on:
   workflow_dispatch:
@@ -24,11 +24,11 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           xcodebuild -version
 
-      - name: Prepare Source
+      - name: Prepare VIPERXMOD source
         shell: bash
         run: |
           set -euo pipefail
-          ZIP_FILE="./HTVANTIX_V1.1.2_BUILD8_MOTION_FILE_ENGINE_SELF_HEAL_V2_SOURCE.zip"
+          ZIP_FILE="./VIPERXMOD_V1.0.0_BUILD1_FILE_ENGINE_SELF_HEAL_FIX_SOURCE.zip"
           test -f "$ZIP_FILE" || { echo "ERROR: ไม่พบ $ZIP_FILE"; ls -lah; exit 1; }
 
           rm -rf source
@@ -36,31 +36,15 @@ jobs:
           unzip -q "$ZIP_FILE" -d source
 
           PROJECT="$(find source -type d -name '*.xcodeproj' -print -quit)"
-          INFO_PLIST="$(find source -type f -path '*/ThreeOneOSFive/Info.plist' -print -quit)"
-          test -n "$PROJECT" && test -n "$INFO_PLIST" || { echo "ERROR: source ไม่ครบ"; find source -maxdepth 4 -print; exit 1; }
+          test -n "$PROJECT" || { echo "ERROR: ไม่พบ .xcodeproj"; find source -maxdepth 5 -print; exit 1; }
 
-          ROOT="$(dirname "$PROJECT")"
-          echo "ROOT=$ROOT"
-
-          if compgen -G "$GITHUB_WORKSPACE/patches/*.patch" > /dev/null; then
-            echo "===== APPLY HTVANTIX V2 PATCHES ====="
-            for PATCH_FILE in "$GITHUB_WORKSPACE"/patches/*.patch; do
-              echo "Applying $(basename "$PATCH_FILE")"
-              patch --batch --forward -p1 -d "$ROOT" < "$PATCH_FILE"
-            done
-          fi
-
-          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName HTVANTIX" "$INFO_PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.1.2" "$INFO_PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 8" "$INFO_PLIST"
-          /usr/libexec/PlistBuddy -c "Set :AppReleaseDisplayVersion 1.1.2" "$INFO_PLIST" || true
+          SCHEME="$(xcodebuild -project "$PROJECT" -list 2>/dev/null | awk '/Schemes:/{flag=1;next} flag && NF {gsub(/^[ \t]+|[ \t]+$/, ""); print; exit}')"
+          test -n "$SCHEME" || { echo "ERROR: scheme not found"; xcodebuild -project "$PROJECT" -list; exit 1; }
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "SCHEME=3105" >> "$GITHUB_ENV"
-          echo "INFO_PLIST=$INFO_PLIST" >> "$GITHUB_ENV"
-
+          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
           echo "PROJECT=$PROJECT"
-          echo "INFO_PLIST=$INFO_PLIST"
+          echo "SCHEME=$SCHEME"
 
       - name: Verify Scheme
         shell: bash
@@ -68,12 +52,12 @@ jobs:
           set -euo pipefail
           xcodebuild -project "$PROJECT" -list
 
-      - name: Build HTVANTIX
+      - name: Build VIPERXMOD
         shell: bash
         run: |
           set -o pipefail
           rm -rf "$GITHUB_WORKSPACE/build" "$GITHUB_WORKSPACE/Payload"
-          rm -f "$GITHUB_WORKSPACE/HTVANTIX_V1.1.2_BUILD8_unsigned.ipa" "$GITHUB_WORKSPACE/xcodebuild.log"
+          rm -f "$GITHUB_WORKSPACE/VIPERXMOD_V1.0.0_BUILD1_unsigned.ipa" "$GITHUB_WORKSPACE/xcodebuild.log"
 
           xcodebuild \
             -project "$PROJECT" \
@@ -82,9 +66,6 @@ jobs:
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
             -derivedDataPath "$GITHUB_WORKSPACE/build" \
-            MARKETING_VERSION=1.1.2 \
-            CURRENT_PROJECT_VERSION=8 \
-            PRODUCT_NAME=HTVANTIX \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -101,14 +82,14 @@ jobs:
           rm -rf Payload
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
-          /usr/bin/zip -qry HTVANTIX_V1.1.2_BUILD8_unsigned.ipa Payload
-          ls -lh HTVANTIX_V1.1.2_BUILD8_unsigned.ipa
+          /usr/bin/zip -qry VIPERXMOD_V1.0.0_BUILD1_unsigned.ipa Payload
+          ls -lh VIPERXMOD_V1.0.0_BUILD1_unsigned.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-V1.1.2-BUILD8-IPA-${{ github.run_number }}
-          path: HTVANTIX_V1.1.2_BUILD8_unsigned.ipa
+          name: VIPERXMOD-V1.0.0-BUILD1-IPA-${{ github.run_number }}
+          path: VIPERXMOD_V1.0.0_BUILD1_unsigned.ipa
           if-no-files-found: error
           retention-days: 7
 
@@ -124,7 +105,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVANTIX-BUILD-LOG-${{ github.run_number }}
+          name: VIPERXMOD-BUILD-LOG-${{ github.run_number }}
           path: xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
