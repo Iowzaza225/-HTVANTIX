@@ -28,7 +28,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ZIP_FILE="./HTVANTIX_V1.1.2_BUILD8_MOTION_UI_SAFE_SOURCE.zip"
+          ZIP_FILE="./HTVANTIX_V1.1.2_BUILD8_MOTION_FILE_ENGINE_SELF_HEAL_V2_SOURCE.zip"
           test -f "$ZIP_FILE" || { echo "ERROR: ไม่พบ $ZIP_FILE"; ls -lah; exit 1; }
 
           rm -rf source
