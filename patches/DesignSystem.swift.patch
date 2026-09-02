@@ -1,0 +1,70 @@
+--- a/ThreeOneOSFive/views/DesignSystem.swift
++++ b/ThreeOneOSFive/views/DesignSystem.swift
+@@ -17,6 +17,8 @@
+     static let selectionIconSize: CGFloat = 18
+ }
+ 
++
++
+ struct AppRowIcon: View {
+     let systemName: String
+     var tint: Color = AppTheme.accent
+@@ -222,3 +224,58 @@
+         modifier(MotionEntranceModifier(active: active, delay: delay))
+     }
+ }
++
++struct MotionScannerLine: View {
++    var tint: Color = AppTheme.accent
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @State private var travel = false
++
++    var body: some View {
++        GeometryReader { proxy in
++            Capsule()
++                .fill(
++                    LinearGradient(
++                        colors: [.clear, tint.opacity(0.85), .clear],
++                        startPoint: .leading,
++                        endPoint: .trailing
++                    )
++                )
++                .frame(width: max(34, proxy.size.width * 0.30), height: 2)
++                .blur(radius: 0.35)
++                .offset(x: travel ? proxy.size.width : -proxy.size.width * 0.35)
++        }
++        .frame(height: 2)
++        .clipped()
++        .onAppear {
++            guard !reduceMotion else { return }
++            withAnimation(.linear(duration: 2.4).repeatForever(autoreverses: false)) {
++                travel = true
++            }
++        }
++        .allowsHitTesting(false)
++        .accessibilityHidden(true)
++    }
++}
++
++struct MotionBreatheSymbol: View {
++    let systemName: String
++    var tint: Color = AppTheme.accent
++    var size: CGFloat = 20
++    @Environment(\.accessibilityReduceMotion) private var reduceMotion
++    @State private var breathe = false
++
++    var body: some View {
++        Image(systemName: systemName)
++            .font(.system(size: size, weight: .bold))
++            .foregroundStyle(tint)
++            .scaleEffect(breathe && !reduceMotion ? 1.07 : 0.97)
++            .shadow(color: tint.opacity(breathe && !reduceMotion ? 0.32 : 0.10), radius: breathe && !reduceMotion ? 9 : 3)
++            .onAppear {
++                guard !reduceMotion else { return }
++                withAnimation(.easeInOut(duration: 1.55).repeatForever(autoreverses: true)) {
++                    breathe = true
++                }
++            }
++            .allowsHitTesting(false)
++    }
++}
