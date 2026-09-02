@@ -1,0 +1,165 @@
+--- a/ThreeOneOSFive/helpers/PatchProjectStore.swift
++++ b/ThreeOneOSFive/helpers/PatchProjectStore.swift
+@@ -1,4 +1,12 @@
+ import Foundation
++import CryptoKit
++
++
++enum RemotePackageImportPhase: Equatable {
++    case downloading(attempt: Int)
++    case verifying
++    case installing
++}
+ 
+ struct PatchStoreAlert: Identifiable {
+     let id = UUID()
+@@ -169,11 +177,21 @@
+ 
+     /// Downloads a server-managed .3105 package and installs it into the local
+     /// patch library without presenting the document-style import UI.
+-    /// Returns the package UUID so the server catalog can map its remote id to
+-    /// the local package. Server packages are expected to be unprotected.
++    ///
++    /// File-engine safeguards:
++    /// - bounded retry (never infinite-spinner loops)
++    /// - expected size + SHA-256 verification when the catalog provides them
++    /// - deterministic local-ID repair when two server files contain the same
++    ///   internal package UUID, so one toggle can never control two rows
++    /// - atomic persistence through PatchProjectLibrary
+     func importRemotePackageSilently(
+         from remoteURL: URL,
+-        headers: [String: String] = [:]
++        headers: [String: String] = [:],
++        remoteIdentity: String,
++        occupiedPackageIDs: Set<UUID> = [],
++        expectedSizeBytes: Int? = nil,
++        expectedSHA256: String? = nil,
++        progress: ((RemotePackageImportPhase) -> Void)? = nil
+     ) async throws -> UUID {
+         guard PatchImportRoute.validatedRemoteURL(remoteURL) != nil else {
+             throw PatchPackageError.invalidImportLink
+@@ -193,32 +211,100 @@
+             request.setValue(value, forHTTPHeaderField: name)
+         }
+ 
+-        let (temporaryURL, response) = try await session.download(for: request)
+-        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+-        guard let http = response as? HTTPURLResponse,
+-              (200..<300).contains(http.statusCode),
+-              let finalURL = http.url,
+-              PatchImportRoute.validatedRemoteURL(finalURL) != nil else {
+-            throw PatchPackageError.remoteImportFailed
+-        }
+-
+-        let data = try PatchProjectLibrary.readPackage(at: temporaryURL)
+-        let summary = try PatchPackageCodec.inspect(data)
+-        if summary.isPasswordProtected {
+-            throw PatchPackageError.invalidPasswordOrCorruptedPackage
+-        }
+-
+-        let existingURL = existingPackageURL(for: summary.packageID)
+-        if let _ = try Self.persistImportedPackage(
+-            data: data,
+-            summary: summary,
+-            existingURL: existingURL
+-        ) {
+-            throw PatchPackageError.invalidPasswordOrCorruptedPackage
++        var lastError: Error = PatchPackageError.remoteImportFailed
++        let maximumAttempts = 3
++
++        for attempt in 1...maximumAttempts {
++            progress?(.downloading(attempt: attempt))
++            var temporaryURL: URL?
++            do {
++                let result = try await session.download(for: request)
++                temporaryURL = result.0
++                defer { if let temporaryURL { try? FileManager.default.removeItem(at: temporaryURL) } }
++
++                guard let http = result.1 as? HTTPURLResponse,
++                      (200..<300).contains(http.statusCode),
++                      let finalURL = http.url,
++                      PatchImportRoute.validatedRemoteURL(finalURL) != nil else {
++                    throw PatchPackageError.remoteImportFailed
++                }
++
++                progress?(.verifying)
++                var data = try PatchProjectLibrary.readPackage(at: result.0)
++
++                if let expectedSizeBytes, expectedSizeBytes > 0, data.count != expectedSizeBytes {
++                    log("patch: remote size mismatch expected=\(expectedSizeBytes) got=\(data.count) id=\(remoteIdentity)")
++                    throw PatchPackageError.remoteImportFailed
++                }
++
++                if let expected = expectedSHA256?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
++                   !expected.isEmpty {
++                    let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
++                    guard actual == expected else {
++                        log("patch: remote checksum mismatch id=\(remoteIdentity)")
++                        throw PatchPackageError.remoteImportFailed
++                    }
++                }
++
++                var summary = try PatchPackageCodec.inspect(data)
++                if summary.isPasswordProtected {
++                    throw PatchPackageError.invalidPasswordOrCorruptedPackage
++                }
++
++                // Two admin records can accidentally contain .3105 files exported from
++                // the same original project UUID. Keeping that UUID would make both UI
++                // rows share one receipt/toggle state. Clone only the colliding package
++                // to a deterministic local UUID derived from the server record ID.
++                if occupiedPackageIDs.contains(summary.packageID) {
++                    let decoded = try PatchPackageCodec.decode(data, password: nil)
++                    var repairedProject = decoded.project
++                    repairedProject.id = Self.uniqueRemoteLocalID(
++                        seed: remoteIdentity,
++                        avoiding: occupiedPackageIDs
++                    )
++                    repairedProject.updatedAt = Date()
++                    let encoded = try PatchPackageCodec.encodeNew(project: repairedProject, password: nil)
++                    data = encoded.data
++                    summary = try PatchPackageCodec.inspect(data)
++                    log("patch: repaired duplicate package UUID for remote=\(remoteIdentity) local=\(summary.packageID.uuidString)")
++                }
++
++                progress?(.installing)
++                let existingURL = existingPackageURL(for: summary.packageID)
++                if let _ = try Self.persistImportedPackage(
++                    data: data,
++                    summary: summary,
++                    existingURL: existingURL
++                ) {
++                    throw PatchPackageError.invalidPasswordOrCorruptedPackage
++                }
++
++                reload()
++                return summary.packageID
++            } catch {
++                lastError = error
++                if attempt < maximumAttempts {
++                    let delay = UInt64(350 * attempt) * 1_000_000
++                    try? await Task.sleep(nanoseconds: delay)
++                }
++            }
+         }
+ 
+-        reload()
+-        return summary.packageID
++        if let patchError = lastError as? PatchPackageError { throw patchError }
++        throw PatchPackageError.remoteImportFailed
++    }
++
++    private static func uniqueRemoteLocalID(seed: String, avoiding occupied: Set<UUID>) -> UUID {
++        for suffix in 0..<32 {
++            let input = suffix == 0 ? "htvantix.remote.\(seed)" : "htvantix.remote.\(seed).\(suffix)"
++            let digest = SHA256.hash(data: Data(input.utf8))
++            let hex = digest.map { String(format: "%02x", $0) }.joined()
++            let candidateString = "\(hex.prefix(8))-\(hex.dropFirst(8).prefix(4))-\(hex.dropFirst(12).prefix(4))-\(hex.dropFirst(16).prefix(4))-\(hex.dropFirst(20).prefix(12))"
++            if let candidate = UUID(uuidString: candidateString), !occupied.contains(candidate) {
++                return candidate
++            }
++        }
++        return UUID()
+     }
+ 
+     func requestUnlock(for item: PatchLibraryItem) {
