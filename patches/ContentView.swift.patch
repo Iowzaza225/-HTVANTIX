@@ -1,0 +1,130 @@
+--- a/ThreeOneOSFive/ContentView.swift
++++ b/ThreeOneOSFive/ContentView.swift
+@@ -32,6 +32,9 @@
+                         deviceCard
+                             .motionEntrance(active: revealContent, delay: 0.08)
+ 
++                        liveStatusStrip
++                            .motionEntrance(active: revealContent, delay: 0.11)
++
+                         Text("YOUR GAMES")
+                             .premiumSectionLabel()
+                             .frame(maxWidth: .infinity, alignment: .leading)
+@@ -108,11 +111,21 @@
+             .ignoresSafeArea()
+ 
+             Circle()
+-                .fill(Color.cyan.opacity(0.035))
+-                .frame(width: 240, height: 240)
+-                .blur(radius: 55)
++                .fill(Color.cyan.opacity(0.055))
++                .frame(width: 260, height: 260)
++                .blur(radius: 60)
+                 .offset(x: ambientMotion && !reduceMotion ? 150 : 110, y: ambientMotion && !reduceMotion ? -250 : -210)
+                 .allowsHitTesting(false)
++
++            RadialGradient(
++                colors: [Color.blue.opacity(0.055), .clear],
++                center: .bottomTrailing,
++                startRadius: 10,
++                endRadius: 300
++            )
++            .offset(x: ambientMotion && !reduceMotion ? 24 : 0, y: 80)
++            .ignoresSafeArea()
++            .allowsHitTesting(false)
+         }
+     }
+ 
+@@ -127,7 +140,8 @@
+                     RoundedRectangle(cornerRadius: 13, style: .continuous)
+                         .stroke(Color.cyan.opacity(0.28), lineWidth: 1)
+                 )
+-                .shadow(color: Color.cyan.opacity(ambientMotion && !reduceMotion ? 0.20 : 0.08), radius: ambientMotion && !reduceMotion ? 13 : 7)
++                .shadow(color: Color.cyan.opacity(ambientMotion && !reduceMotion ? 0.30 : 0.10), radius: ambientMotion && !reduceMotion ? 16 : 7)
++                .scaleEffect(ambientMotion && !reduceMotion ? 1.025 : 0.995)
+                 .offset(y: ambientMotion && !reduceMotion ? -1.5 : 1.0)
+ 
+             VStack(alignment: .leading, spacing: 2) {
+@@ -190,6 +204,49 @@
+         .premiumCard()
+     }
+ 
++    private var liveStatusStrip: some View {
++        VStack(spacing: 8) {
++            HStack(spacing: 10) {
++                HStack(spacing: 6) {
++                    MotionStatusDot(color: .green, size: 5)
++                        .frame(width: 8, height: 8)
++                    Text("SECURE LINK")
++                }
++
++                Spacer()
++
++                HStack(spacing: 6) {
++                    Image(systemName: "bolt.fill")
++                        .foregroundStyle(Color.cyan)
++                    Text("LIVE CATALOG")
++                }
++
++                Spacer()
++
++                HStack(spacing: 6) {
++                    Image(systemName: "checkmark.shield.fill")
++                        .foregroundStyle(Color.green)
++                    Text("READY")
++                }
++            }
++            .font(.system(size: 10, weight: .black, design: .rounded))
++            .tracking(0.7)
++            .foregroundStyle(.secondary)
++
++            MotionScannerLine(tint: .cyan)
++        }
++        .padding(.horizontal, 14)
++        .padding(.vertical, 10)
++        .background(
++            RoundedRectangle(cornerRadius: 16, style: .continuous)
++                .fill(Color.white.opacity(0.025))
++        )
++        .overlay(
++            RoundedRectangle(cornerRadius: 16, style: .continuous)
++                .stroke(Color.cyan.opacity(0.11), lineWidth: 0.8)
++        )
++    }
++
+     private func items(for game: String) -> [PatchServerCatalog.RemoteItem] {
+         homeCatalog.items.filter { $0.game == game }
+     }
+@@ -230,9 +287,7 @@
+ 
+             Spacer()
+ 
+-            Image(systemName: "chevron.right")
+-                .font(.system(size: 17, weight: .bold))
+-                .foregroundStyle(Color.cyan)
++            MotionBreatheSymbol(systemName: "chevron.right", tint: .cyan, size: 17)
+         }
+         .premiumCard()
+     }
+@@ -258,9 +313,7 @@
+ 
+             Spacer()
+ 
+-            Image(systemName: "checkmark.shield.fill")
+-                .font(.title2)
+-                .foregroundStyle(Color.green)
++            MotionBreatheSymbol(systemName: "checkmark.shield.fill", tint: .green, size: 22)
+         }
+         .premiumCard()
+     }
+@@ -292,9 +345,7 @@
+ 
+             Spacer()
+ 
+-            Image(systemName: "checkmark.circle.fill")
+-                .font(.title2)
+-                .foregroundStyle(Color.green)
++            MotionBreatheSymbol(systemName: "checkmark.circle.fill", tint: .green, size: 22)
+         }
+         .premiumCard()
+     }
