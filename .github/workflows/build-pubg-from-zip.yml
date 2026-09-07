@@ -2,12 +2,6 @@ name: Build PUBG CONTROL IPA
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "PUBG_CONTROL_COMPLETE_SOURCE.zip"
-      - ".github/workflows/build-pubg-from-zip.yml"
 
 jobs:
   build:
@@ -17,85 +11,96 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract source ZIP
+      - name: Extract source
         run: |
-          ZIP="PUBG_CONTROL_COMPLETE_SOURCE.zip"
+          unzip -q PUBG_CONTROL_COMPLETE_SOURCE.zip -d pubg-source
+          echo "SOURCE_DIR=$(find pubg-source -name '*.xcodeproj' -print -quit | xargs dirname)" >> "$GITHUB_ENV"
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERROR: ไม่พบไฟล์ $ZIP"
-            exit 1
-          fi
-
-          mkdir -p extracted
-          ditto -x -k "$ZIP" extracted
-
-          PROJECT="$(find extracted -type d -name "*.xcodeproj" | head -1)"
-
-          if [ -z "$PROJECT" ]; then
-            echo "ERROR: ไม่พบไฟล์ .xcodeproj ภายใน ZIP"
-            exit 1
-          fi
-
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-
-      - name: Find Xcode scheme
+      - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
-          SCHEME="$(xcodebuild \
-            -project "$PROJECT" \
-            -list 2>/dev/null |
-            awk '/Schemes:/{flag=1;next} flag && NF {
-              gsub(/^[ \t]+|[ \t]+$/, "");
-              print;
-              exit
-            }')"
-
-          if [ -z "$SCHEME" ]; then
-            echo "ERROR: ไม่พบ Scheme"
-            xcodebuild -project "$PROJECT" -list
+      - name: Detect project and scheme
+        run: |
+          PROJECT=$(find pubg-source -name "*.xcodeproj" -print -quit)
+          if [ -z "$PROJECT" ]; then
+            echo "ไม่พบไฟล์ Xcode project"
             exit 1
           fi
 
-          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          echo "Project: $PROJECT"
-          echo "Scheme: $SCHEME"
+          SCHEME=$(xcodebuild -project "$PROJECT" -list -json |
+            python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["project"]["schemes"][0])')
 
-      - name: Build unsigned application
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+
+      - name: Build application
         run: |
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath build \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            clean build
 
-      - name: Create unsigned IPA
+      - name: Find application
         run: |
-          APP="$(find build -type d -name "*.app" | head -1)"
+          APP=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" \
+            -maxdepth 1 -name "*.app" -print -quit)
 
           if [ -z "$APP" ]; then
-            echo "ERROR: ไม่พบไฟล์ .app"
+            echo "ไม่พบไฟล์ .app หลังจาก Build"
             exit 1
           fi
 
-          mkdir -p Payload
-          cp -R "$APP" Payload/
+          echo "APP=$APP" >> "$GITHUB_ENV"
 
-          /usr/bin/zip -qry \
-            PUBG-CONTROL-unsigned.ipa \
-            Payload
+      - name: Prepare and sign for GBox
+        run: |
+          xattr -cr "$APP"
 
-          ls -lh PUBG-CONTROL-unsigned.ipa
+          find "$APP" \
+            \( -name "*.framework" -o -name "*.dylib" -o -name "*.appex" \) \
+            -print0 |
+          while IFS= read -r -d '' ITEM; do
+            /usr/bin/codesign \
+              --force \
+              --sign - \
+              --timestamp=none \
+              "$ITEM"
+          done
+
+          /usr/bin/codesign \
+            --force \
+            --deep \
+            --sign - \
+            --timestamp=none \
+            "$APP"
+
+          /usr/bin/codesign \
+            --verify \
+            --deep \
+            --strict \
+            --verbose=2 \
+            "$APP"
+
+      - name: Create IPA
+        run: |
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/Payload/"
+
+          cd "$RUNNER_TEMP"
+          zip -qry "$GITHUB_WORKSPACE/PUBG-CONTROL-GBOX.ipa" Payload
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: PUBG-CONTROL-IPA
-          path: PUBG-CONTROL-unsigned.ipa
+          name: PUBG-CONTROL-GBOX-BUILD9
+          path: PUBG-CONTROL-GBOX.ipa
           if-no-files-found: error
+          retention-days: 30
