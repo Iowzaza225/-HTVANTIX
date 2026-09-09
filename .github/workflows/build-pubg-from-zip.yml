@@ -38,14 +38,10 @@ jobs:
           unzip -q "$ZIP_FILE" -d mash-source
 
           PROJECT="$(find mash-source -name 'ThreeOneOSFive.xcodeproj' -type d | head -1)"
-          if [ -z "$PROJECT" ]; then
-            echo "❌ ไม่พบ ThreeOneOSFive.xcodeproj"
-            exit 1
-          fi
-
           APP_SRC="$(find mash-source -path '*/Client/ThreeOneOSFive' -type d | head -1)"
-          if [ -z "$APP_SRC" ]; then
-            echo "❌ ไม่พบโฟลเดอร์ ThreeOneOSFive"
+
+          if [ -z "$PROJECT" ] || [ -z "$APP_SRC" ]; then
+            echo "❌ Source structure ไม่ถูกต้อง"
             exit 1
           fi
 
@@ -53,7 +49,7 @@ jobs:
           echo "APP_SRC=$APP_SRC" >> "$GITHUB_ENV"
           echo "✅ Project: $PROJECT"
 
-      - name: Apply MASH PRO fixes
+      - name: Apply MASH PRO runtime fixes
         shell: bash
         run: |
           set -e
@@ -65,6 +61,7 @@ jobs:
           app = Path(os.environ['APP_SRC'])
           project = Path(os.environ['PROJECT']) / 'project.pbxproj'
 
+          # Branding / version
           s = project.read_text(encoding='utf-8')
           s = s.replace('INFOPLIST_KEY_CFBundleDisplayName = Viperxmod;', 'INFOPLIST_KEY_CFBundleDisplayName = "MASH PRO";')
           s = s.replace('INFOPLIST_KEY_CFBundleDisplayName = MASH PRO;', 'INFOPLIST_KEY_CFBundleDisplayName = "MASH PRO";')
@@ -72,22 +69,44 @@ jobs:
           s = s.replace('MARKETING_VERSION = 1.0.0;', 'MARKETING_VERSION = 1.0.6;')
           project.write_text(s, encoding='utf-8')
 
-          for rel in ['App.swift', 'views/SettingsView.swift']:
-              p = app / rel
-              text = p.read_text(encoding='utf-8')
-              text = text.replace('htvantix.captureProtectionEnabled', 'mashpro.captureProtectionEnabled')
-              p.write_text(text, encoding='utf-8')
+          # App.swift: GBox/sideload environments can expose injected images or
+          # environment variables. The original release anti-debug check calls
+          # exit(173) before SwiftUI can render, which looks like a white screen
+          # followed by an immediate app exit. Disable only that startup call.
+          app_swift = app / 'App.swift'
+          text = app_swift.read_text(encoding='utf-8')
+          text = text.replace(
+              'HTVAntiDebug.enforce()',
+              '// HTVAntiDebug startup enforcement disabled for sideload compatibility'
+          )
+          text = text.replace('htvantix.captureProtectionEnabled', 'mashpro.captureProtectionEnabled')
+          text = text.replace('VIPERXMOD SYSTEM', 'MASH PRO SYSTEM')
+          text = text.replace('VIPERXMOD • Secure Session', 'MASH PRO • Secure Session')
+          text = text.replace('secureTextField.text = "VIPERXMOD"', 'secureTextField.text = "MASH PRO"')
+          text = text.replace('Text("VIPERXMOD")', 'Text("MASH PRO")')
+          text = text.replace('Viperxmod ถูกปิดใช้งานจากระบบ', 'MASH PRO ถูกปิดใช้งานจากระบบ')
+          text = text.replace('คีย์นี้ไม่ได้สร้างสำหรับ Viperxmod', 'คีย์นี้ไม่ได้สร้างสำหรับ MASH PRO')
+          app_swift.write_text(text, encoding='utf-8')
 
-          for rel in ['App.swift', 'ContentView.swift', 'views/SettingsView.swift']:
-              p = app / rel
-              text = p.read_text(encoding='utf-8')
-              text = text.replace('VIPERXMOD SYSTEM', 'MASH PRO SYSTEM')
-              text = text.replace('VIPERXMOD • Secure Session', 'MASH PRO • Secure Session')
-              text = text.replace('secureTextField.text = "VIPERXMOD"', 'secureTextField.text = "MASH PRO"')
-              text = text.replace('Text("VIPERXMOD")', 'Text("MASH PRO")')
-              text = text.replace('Viperxmod ถูกปิดใช้งานจากระบบ', 'MASH PRO ถูกปิดใช้งานจากระบบ')
-              text = text.replace('คีย์นี้ไม่ได้สร้างสำหรับ Viperxmod', 'คีย์นี้ไม่ได้สร้างสำหรับ MASH PRO')
-              p.write_text(text, encoding='utf-8')
+          # Keep capture-protection preference separate from the old app install.
+          settings = app / 'views/SettingsView.swift'
+          text = settings.read_text(encoding='utf-8')
+          text = text.replace('htvantix.captureProtectionEnabled', 'mashpro.captureProtectionEnabled')
+          text = text.replace('Text("VIPERXMOD")', 'Text("MASH PRO")')
+          settings.write_text(text, encoding='utf-8')
+
+          # Remaining visible home branding.
+          content = app / 'ContentView.swift'
+          text = content.read_text(encoding='utf-8')
+          text = text.replace('VIPERXMOD SYSTEM', 'MASH PRO SYSTEM')
+          text = text.replace('VIPERXMOD • Secure Session', 'MASH PRO • Secure Session')
+          text = text.replace('Text("VIPERXMOD")', 'Text("MASH PRO")')
+          content.write_text(text, encoding='utf-8')
+
+          # Fail the build if the startup exit path is still callable.
+          verify = app_swift.read_text(encoding='utf-8')
+          if 'HTVAntiDebug.enforce()' in verify:
+              raise SystemExit('Anti-debug startup call still present')
           PY
 
           /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName MASH PRO' "$APP_SRC/Info.plist"
@@ -95,9 +114,9 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 6' "$APP_SRC/Info.plist"
           /usr/libexec/PlistBuddy -c 'Set :AppReleaseDisplayVersion 1.0.6' "$APP_SRC/Info.plist" || true
 
-          echo '--- verify branding/version ---'
+          echo '--- runtime fix verification ---'
+          grep -n 'HTVAntiDebug' "$APP_SRC/App.swift" | head -20 || true
           grep -n 'CFBundleDisplayName\|CFBundleShortVersionString\|CFBundleVersion' "$APP_SRC/Info.plist" || true
-          grep -n 'INFOPLIST_KEY_CFBundleDisplayName\|CURRENT_PROJECT_VERSION\|MARKETING_VERSION' "$PROJECT/project.pbxproj" || true
 
       - name: Detect scheme
         shell: bash
@@ -117,6 +136,7 @@ jobs:
             -scheme "$SCHEME" \
             -configuration Release \
             -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -126,7 +146,7 @@ jobs:
             INFOPLIST_KEY_CFBundleDisplayName="MASH PRO" \
             clean build
 
-      - name: Find built application
+      - name: Find and verify built app
         shell: bash
         run: |
           set -e
@@ -134,13 +154,11 @@ jobs:
           APP="$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" -maxdepth 1 -name '*.app' -print -quit)"
           if [ -z "$APP" ]; then
             echo "❌ ไม่พบไฟล์ .app หลัง Build"
-            find "$RUNNER_TEMP/DerivedData/Build/Products" -maxdepth 3 -print
             exit 1
           fi
 
           echo "APP=$APP" >> "$GITHUB_ENV"
           echo "✅ APP: $APP"
-
           echo '--- built Info.plist ---'
           /usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP/Info.plist"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist"
@@ -170,13 +188,13 @@ jobs:
           cp -R "$APP" "$RUNNER_TEMP/Payload/"
 
           cd "$RUNNER_TEMP"
-          zip -qry "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6_FIXED.ipa" Payload
-          ls -lh "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6_FIXED.ipa"
+          zip -qry "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6_RUNTIME_FIX.ipa" Payload
+          ls -lh "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6_RUNTIME_FIX.ipa"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: MASH-PRO-V1.0.6-BUILD6-FIXED
-          path: MASH_PRO_V1.0.6_BUILD6_FIXED.ipa
+          name: MASH-PRO-V1.0.6-BUILD6-RUNTIME-FIX
+          path: MASH_PRO_V1.0.6_BUILD6_RUNTIME_FIX.ipa
           if-no-files-found: error
           retention-days: 30
