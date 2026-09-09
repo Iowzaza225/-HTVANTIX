@@ -1,4 +1,4 @@
-name: Build PUBG CONTROL IPA
+name: Build MASH PRO IPA
 
 on:
   workflow_dispatch:
@@ -11,32 +11,58 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract source
-        run: |
-          unzip -q PUBG_CONTROL_COMPLETE_SOURCE.zip -d pubg-source
-          echo "SOURCE_DIR=$(find pubg-source -name '*.xcodeproj' -print -quit | xargs dirname)" >> "$GITHUB_ENV"
-
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
-      - name: Detect project and scheme
+      - name: Extract MASH PRO source
+        shell: bash
         run: |
-          PROJECT=$(find pubg-source -name "*.xcodeproj" -print -quit)
+          set -e
+
+          ZIP_FILE="MASH_PRO_V1.0.6_BUILD6_RED_THEME_SOURCE.zip"
+
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ไม่พบไฟล์ $ZIP_FILE"
+            exit 1
+          fi
+
+          rm -rf mash-source
+          mkdir -p mash-source
+          unzip -q "$ZIP_FILE" -d mash-source
+
+          PROJECT=$(find mash-source -name "*.xcodeproj" -type d -print -quit)
           if [ -z "$PROJECT" ]; then
             echo "ไม่พบไฟล์ Xcode project"
             exit 1
           fi
 
-          SCHEME=$(xcodebuild -project "$PROJECT" -list -json |
-            python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["project"]["schemes"][0])')
-
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+          echo "พบ Project: $PROJECT"
 
-      - name: Build application
+      - name: Detect scheme
+        shell: bash
         run: |
+          set -e
+
+          SCHEME=$(xcodebuild -project "$PROJECT" -list -json | \
+            python3 -c 'import json,sys; d=json.load(sys.stdin); schemes=d.get("project",{}).get("schemes",[]); print(schemes[0] if schemes else "")')
+
+          if [ -z "$SCHEME" ]; then
+            echo "ไม่พบ Xcode scheme"
+            xcodebuild -project "$PROJECT" -list
+            exit 1
+          fi
+
+          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+          echo "ใช้ Scheme: $SCHEME"
+
+      - name: Build MASH PRO
+        shell: bash
+        run: |
+          set -e
+
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
@@ -46,34 +72,43 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION=1.0.6 \
+            CURRENT_PROJECT_VERSION=6 \
             clean build
 
-      - name: Find application
+      - name: Find built application
+        shell: bash
         run: |
+          set -e
+
           APP=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" \
-            -maxdepth 1 -name "*.app" -print -quit)
+            -maxdepth 1 -name "*.app" -type d -print -quit)
 
           if [ -z "$APP" ]; then
-            echo "ไม่พบไฟล์ .app หลังจาก Build"
+            echo "ไม่พบไฟล์ .app หลัง Build"
+            find "$RUNNER_TEMP/DerivedData/Build/Products" -maxdepth 3 -print || true
             exit 1
           fi
 
           echo "APP=$APP" >> "$GITHUB_ENV"
+          echo "พบ App: $APP"
 
       - name: Prepare and sign for GBox
+        shell: bash
         run: |
+          set -e
+
           xattr -cr "$APP"
 
           find "$APP" \
             \( -name "*.framework" -o -name "*.dylib" -o -name "*.appex" \) \
-            -print0 |
-          while IFS= read -r -d '' ITEM; do
-            /usr/bin/codesign \
-              --force \
-              --sign - \
-              --timestamp=none \
-              "$ITEM"
-          done
+            -print0 | while IFS= read -r -d '' ITEM; do
+              /usr/bin/codesign \
+                --force \
+                --sign - \
+                --timestamp=none \
+                "$ITEM"
+            done
 
           /usr/bin/codesign \
             --force \
@@ -90,17 +125,24 @@ jobs:
             "$APP"
 
       - name: Create IPA
+        shell: bash
         run: |
+          set -e
+
+          rm -rf "$RUNNER_TEMP/Payload"
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$APP" "$RUNNER_TEMP/Payload/"
 
           cd "$RUNNER_TEMP"
-          zip -qry "$GITHUB_WORKSPACE/PUBG-CONTROL-GBOX.ipa" Payload
+          zip -qry "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6.ipa" Payload
 
-      - name: Upload IPA
+          echo "สร้าง IPA สำเร็จ"
+          ls -lh "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6.ipa"
+
+      - name: Upload MASH PRO IPA
         uses: actions/upload-artifact@v4
         with:
-          name: PUBG-CONTROL-GBOX-BUILD9
-          path: PUBG-CONTROL-GBOX.ipa
+          name: MASH-PRO-V1.0.6-BUILD6
+          path: MASH_PRO_V1.0.6_BUILD6.ipa
           if-no-files-found: error
           retention-days: 30
