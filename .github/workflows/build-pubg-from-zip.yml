@@ -49,7 +49,7 @@ jobs:
           echo "APP_SRC=$APP_SRC" >> "$GITHUB_ENV"
           echo "✅ Project: $PROJECT"
 
-      - name: Apply MASH PRO runtime fixes
+      - name: Apply MASH PRO fixes
         shell: bash
         run: |
           set -e
@@ -69,10 +69,17 @@ jobs:
           s = s.replace('MARKETING_VERSION = 1.0.0;', 'MARKETING_VERSION = 1.0.6;')
           project.write_text(s, encoding='utf-8')
 
-          # App.swift: GBox/sideload environments can expose injected images or
-          # environment variables. The original release anti-debug check calls
-          # exit(173) before SwiftUI can render, which looks like a white screen
-          # followed by an immediate app exit. Disable only that startup call.
+          # App ID used by License / Version Gate / Catalog must be exactly: mashpro
+          # Replace the old internal App ID in Swift source while leaving the server URL unchanged.
+          for p in app.rglob('*.swift'):
+              text = p.read_text(encoding='utf-8')
+              original = text
+              text = text.replace('"viperxmod"', '"mashpro"')
+              text = text.replace('viperxmod.remote.', 'mashpro.remote.')
+              if text != original:
+                  p.write_text(text, encoding='utf-8')
+
+          # GBox/sideload runtime compatibility.
           app_swift = app / 'App.swift'
           text = app_swift.read_text(encoding='utf-8')
           text = text.replace(
@@ -88,14 +95,12 @@ jobs:
           text = text.replace('คีย์นี้ไม่ได้สร้างสำหรับ Viperxmod', 'คีย์นี้ไม่ได้สร้างสำหรับ MASH PRO')
           app_swift.write_text(text, encoding='utf-8')
 
-          # Keep capture-protection preference separate from the old app install.
           settings = app / 'views/SettingsView.swift'
           text = settings.read_text(encoding='utf-8')
           text = text.replace('htvantix.captureProtectionEnabled', 'mashpro.captureProtectionEnabled')
           text = text.replace('Text("VIPERXMOD")', 'Text("MASH PRO")')
           settings.write_text(text, encoding='utf-8')
 
-          # Remaining visible home branding.
           content = app / 'ContentView.swift'
           text = content.read_text(encoding='utf-8')
           text = text.replace('VIPERXMOD SYSTEM', 'MASH PRO SYSTEM')
@@ -103,10 +108,18 @@ jobs:
           text = text.replace('Text("VIPERXMOD")', 'Text("MASH PRO")')
           content.write_text(text, encoding='utf-8')
 
-          # Fail the build if the startup exit path is still callable.
+          # Verification: startup anti-debug call must be gone and old App ID must not remain.
           verify = app_swift.read_text(encoding='utf-8')
           if 'HTVAntiDebug.enforce()' in verify:
               raise SystemExit('Anti-debug startup call still present')
+
+          old_appid_hits = []
+          for p in app.rglob('*.swift'):
+              text = p.read_text(encoding='utf-8')
+              if '"viperxmod"' in text:
+                  old_appid_hits.append(str(p))
+          if old_appid_hits:
+              raise SystemExit('Old viperxmod App ID still present: ' + ', '.join(old_appid_hits))
           PY
 
           /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName MASH PRO' "$APP_SRC/Info.plist"
@@ -114,8 +127,9 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 6' "$APP_SRC/Info.plist"
           /usr/libexec/PlistBuddy -c 'Set :AppReleaseDisplayVersion 1.0.6' "$APP_SRC/Info.plist" || true
 
-          echo '--- runtime fix verification ---'
-          grep -n 'HTVAntiDebug' "$APP_SRC/App.swift" | head -20 || true
+          echo '--- MASH PRO verification ---'
+          echo 'App ID expected: mashpro'
+          grep -Rni --include='*.swift' 'appId.*mashpro\|"mashpro"' "$APP_SRC" | head -30 || true
           grep -n 'CFBundleDisplayName\|CFBundleShortVersionString\|CFBundleVersion' "$APP_SRC/Info.plist" || true
 
       - name: Detect scheme
@@ -188,13 +202,13 @@ jobs:
           cp -R "$APP" "$RUNNER_TEMP/Payload/"
 
           cd "$RUNNER_TEMP"
-          zip -qry "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6_RUNTIME_FIX.ipa" Payload
-          ls -lh "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6_RUNTIME_FIX.ipa"
+          zip -qry "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6_APPID_MASHPRO.ipa" Payload
+          ls -lh "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6_APPID_MASHPRO.ipa"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: MASH-PRO-V1.0.6-BUILD6-RUNTIME-FIX
-          path: MASH_PRO_V1.0.6_BUILD6_RUNTIME_FIX.ipa
+          name: MASH-PRO-V1.0.6-BUILD6-APPID-MASHPRO
+          path: MASH_PRO_V1.0.6_BUILD6_APPID_MASHPRO.ipa
           if-no-files-found: error
           retention-days: 30
