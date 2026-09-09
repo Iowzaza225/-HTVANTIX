@@ -21,10 +21,10 @@ jobs:
         run: |
           set -e
 
-          ZIP_FILE="MASH_PRO_V1.0.6_BUILD6_RED_THEME_SOURCE.zip"
-
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "ไม่พบไฟล์ $ZIP_FILE"
+          ZIP_FILE="$(find . -maxdepth 2 -type f -name 'MASH_PRO_V1.0.6_BUILD6*.zip' | head -1)"
+          if [ -z "$ZIP_FILE" ]; then
+            echo "❌ ไม่พบ MASH_PRO_V1.0.6_BUILD6 ZIP"
+            find . -maxdepth 2 -type f -print
             exit 1
           fi
 
@@ -32,31 +32,80 @@ jobs:
           mkdir -p mash-source
           unzip -q "$ZIP_FILE" -d mash-source
 
-          PROJECT=$(find mash-source -name "*.xcodeproj" -type d -print -quit)
+          PROJECT="$(find mash-source -name 'ThreeOneOSFive.xcodeproj' -type d | head -1)"
           if [ -z "$PROJECT" ]; then
-            echo "ไม่พบไฟล์ Xcode project"
+            echo "❌ ไม่พบ ThreeOneOSFive.xcodeproj"
+            exit 1
+          fi
+
+          APP_SRC="$(find mash-source -path '*/Client/ThreeOneOSFive' -type d | head -1)"
+          if [ -z "$APP_SRC" ]; then
+            echo "❌ ไม่พบโฟลเดอร์ ThreeOneOSFive"
             exit 1
           fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "พบ Project: $PROJECT"
+          echo "APP_SRC=$APP_SRC" >> "$GITHUB_ENV"
+          echo "✅ Project: $PROJECT"
+
+      - name: Apply MASH PRO fixes
+        shell: bash
+        run: |
+          set -e
+
+          python3 <<'PY'
+          from pathlib import Path
+          import os
+
+          app = Path(os.environ['APP_SRC'])
+          project = Path(os.environ['PROJECT']) / 'project.pbxproj'
+
+          # 1) Force the installed app label to MASH PRO.
+          s = project.read_text(encoding='utf-8')
+          s = s.replace('INFOPLIST_KEY_CFBundleDisplayName = Viperxmod;', 'INFOPLIST_KEY_CFBundleDisplayName = "MASH PRO";')
+          s = s.replace('INFOPLIST_KEY_CFBundleDisplayName = MASH PRO;', 'INFOPLIST_KEY_CFBundleDisplayName = "MASH PRO";')
+          s = s.replace('CURRENT_PROJECT_VERSION = 1;', 'CURRENT_PROJECT_VERSION = 6;')
+          s = s.replace('MARKETING_VERSION = 1.0.0;', 'MARKETING_VERSION = 1.0.6;')
+          project.write_text(s, encoding='utf-8')
+
+          # 2) Reset only the old capture-protection preference.
+          #    Same bundle ID can inherit the previous Viperxmod value and show a blank/white view.
+          for rel in ['App.swift', 'views/SettingsView.swift']:
+              p = app / rel
+              text = p.read_text(encoding='utf-8')
+              text = text.replace('htvantix.captureProtectionEnabled', 'mashpro.captureProtectionEnabled')
+              p.write_text(text, encoding='utf-8')
+
+          # 3) Clean up remaining visible Viperxmod text without changing backend URL.
+          for rel in ['App.swift', 'ContentView.swift', 'views/SettingsView.swift']:
+              p = app / rel
+              text = p.read_text(encoding='utf-8')
+              text = text.replace('VIPERXMOD SYSTEM', 'MASH PRO SYSTEM')
+              text = text.replace('VIPERXMOD • Secure Session', 'MASH PRO • Secure Session')
+              text = text.replace('secureTextField.text = "VIPERXMOD"', 'secureTextField.text = "MASH PRO"')
+              text = text.replace('Text("VIPERXMOD")', 'Text("MASH PRO")')
+              text = text.replace('Viperxmod ถูกปิดใช้งานจากระบบ', 'MASH PRO ถูกปิดใช้งานจากระบบ')
+              text = text.replace('คีย์นี้ไม่ได้สร้างสำหรับ Viperxmod', 'คีย์นี้ไม่ได้สร้างสำหรับ MASH PRO')
+              p.write_text(text, encoding='utf-8')
+          PY
+
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName MASH PRO' "$APP_SRC/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 1.0.6' "$APP_SRC/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 6' "$APP_SRC/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Set :AppReleaseDisplayVersion 1.0.6' "$APP_SRC/Info.plist" || true
+
+          echo '--- verify branding/version ---'
+          grep -n 'CFBundleDisplayName\|CFBundleShortVersionString\|CFBundleVersion' "$APP_SRC/Info.plist" || true
+          grep -n 'INFOPLIST_KEY_CFBundleDisplayName\|CURRENT_PROJECT_VERSION\|MARKETING_VERSION' "$PROJECT/project.pbxproj" || true
+          grep -R -n 'VIPERXMOD SYSTEM\|VIPERXMOD • Secure Session' "$APP_SRC" || true
 
       - name: Detect scheme
         shell: bash
         run: |
           set -e
-
-          SCHEME=$(xcodebuild -project "$PROJECT" -list -json | \
-            python3 -c 'import json,sys; d=json.load(sys.stdin); schemes=d.get("project",{}).get("schemes",[]); print(schemes[0] if schemes else "")')
-
-          if [ -z "$SCHEME" ]; then
-            echo "ไม่พบ Xcode scheme"
-            xcodebuild -project "$PROJECT" -list
-            exit 1
-          fi
-
+          SCHEME=$(xcodebuild -project "$PROJECT" -list -json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["project"]["schemes"][0])')
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          echo "ใช้ Scheme: $SCHEME"
+          echo "✅ Scheme: $SCHEME"
 
       - name: Build MASH PRO
         shell: bash
@@ -72,8 +121,9 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            MARKETING_VERSION=1.0.6 \
             CURRENT_PROJECT_VERSION=6 \
+            MARKETING_VERSION=1.0.6 \
+            INFOPLIST_KEY_CFBundleDisplayName="MASH PRO" \
             clean build
 
       - name: Find built application
@@ -81,68 +131,52 @@ jobs:
         run: |
           set -e
 
-          APP=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" \
-            -maxdepth 1 -name "*.app" -type d -print -quit)
-
+          APP="$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" -maxdepth 1 -name '*.app' -print -quit)"
           if [ -z "$APP" ]; then
-            echo "ไม่พบไฟล์ .app หลัง Build"
-            find "$RUNNER_TEMP/DerivedData/Build/Products" -maxdepth 3 -print || true
+            echo "❌ ไม่พบไฟล์ .app หลัง Build"
+            find "$RUNNER_TEMP/DerivedData/Build/Products" -maxdepth 3 -print
             exit 1
           fi
 
           echo "APP=$APP" >> "$GITHUB_ENV"
-          echo "พบ App: $APP"
+          echo "✅ APP: $APP"
+
+          echo '--- built Info.plist ---'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist"
 
       - name: Prepare and sign for GBox
         shell: bash
         run: |
           set -e
-
           xattr -cr "$APP"
 
           find "$APP" \
-            \( -name "*.framework" -o -name "*.dylib" -o -name "*.appex" \) \
+            \( -name '*.framework' -o -name '*.dylib' -o -name '*.appex' \) \
             -print0 | while IFS= read -r -d '' ITEM; do
-              /usr/bin/codesign \
-                --force \
-                --sign - \
-                --timestamp=none \
-                "$ITEM"
+              /usr/bin/codesign --force --sign - --timestamp=none "$ITEM"
             done
 
-          /usr/bin/codesign \
-            --force \
-            --deep \
-            --sign - \
-            --timestamp=none \
-            "$APP"
-
-          /usr/bin/codesign \
-            --verify \
-            --deep \
-            --strict \
-            --verbose=2 \
-            "$APP"
+          /usr/bin/codesign --force --deep --sign - --timestamp=none "$APP"
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
 
       - name: Create IPA
         shell: bash
         run: |
           set -e
-
           rm -rf "$RUNNER_TEMP/Payload"
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$APP" "$RUNNER_TEMP/Payload/"
 
           cd "$RUNNER_TEMP"
-          zip -qry "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6.ipa" Payload
+          zip -qry "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6_FIXED.ipa" Payload
+          ls -lh "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6_FIXED.ipa"
 
-          echo "สร้าง IPA สำเร็จ"
-          ls -lh "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6.ipa"
-
-      - name: Upload MASH PRO IPA
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: MASH-PRO-V1.0.6-BUILD6
-          path: MASH_PRO_V1.0.6_BUILD6.ipa
+          name: MASH-PRO-V1.0.6-BUILD6-FIXED
+          path: MASH_PRO_V1.0.6_BUILD6_FIXED.ipa
           if-no-files-found: error
           retention-days: 30
