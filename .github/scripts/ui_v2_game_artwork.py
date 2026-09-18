@@ -88,12 +88,12 @@ if pending_start < 0 or pending_end < 0:
 pending = s[pending_start:pending_end]
 pending = re.sub(
     r'''            AppRowIcon\(\n                systemName: failure == nil \? "arrow\.down\.circle\.fill" : "exclamationmark\.triangle\.fill",\n                tint: failure == nil \? AppTheme\.accent : \.orange,\n                frameSize: 42\n            \)''',
-    '            HTVGameIcon(game: remote.game, size: 42)',
+    '            HTVGameIcon(game: remote.game ?? "ff", size: 42)',
     pending,
     count=1,
 )
 pending = pending.replace('            AppRowIcon(systemName: "arrow.down.circle.fill", frameSize: 42)',
-                          '            HTVGameIcon(game: remote.game, size: 42)', 1)
+                          '            HTVGameIcon(game: remote.game ?? "ff", size: 42)', 1)
 s = s[:pending_start] + pending + s[pending_end:]
 
 row_start = s.find("    private func serverPatchRow")
@@ -105,11 +105,11 @@ if row_end < 0:
 row = s[row_start:row_end]
 row = re.sub(
     r'''                AppRowIcon\(\n                    systemName: isActive \? "bolt\.shield\.fill" : "shippingbox\.fill",\n                    tint: isActive \? \.green : AppTheme\.accent,\n                    symbolSize: 19,\n                    frameSize: 44\n                \)''',
-    '                HTVGameIcon(game: remote.game, size: 44)',
+    '                HTVGameIcon(game: remote.game ?? "ff", size: 44)',
     row,
     count=1,
 )
-if "HTVGameIcon(game: remote.game, size: 44)" not in row:
+if "HTVGameIcon(game: remote.game ?? "ff", size: 44)" not in row:
     raise RuntimeError("serverPatchRow icon block not found")
 s = s[:row_start] + row + s[row_end:]
 patch.write_text(s)
