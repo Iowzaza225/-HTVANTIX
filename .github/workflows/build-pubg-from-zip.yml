@@ -130,7 +130,7 @@ jobs:
           echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
 
       # =========================================================
-      # 4. Patch source compatibility
+      # 4. Patch HTVINTEX source for production behavior
       # =========================================================
       - name: Patch HTVINTEX source
         shell: bash
@@ -139,28 +139,10 @@ jobs:
 
           PROJECT="${{ steps.source.outputs.project }}"
           PROJECT_DIR="$(dirname "$PROJECT")"
-          SETTINGS="$PROJECT_DIR/ThreeOneOSFive/views/SettingsView.swift"
 
-          if [ ! -f "$SETTINGS" ]; then
-            echo "❌ SettingsView.swift not found: $SETTINGS"
-            exit 1
-          fi
+          python3 "$GITHUB_WORKSPACE/.github/scripts/patch_htvintex.py" "$PROJECT_DIR"
 
-          perl -pi -e 's/Section\("License"\) \{/Section {/' "$SETTINGS"
-
-          echo "✅ Patched SettingsView.swift"
-          grep -n -A28 -B2 'Section {' "$SETTINGS" | head -80 || true
-
-          PATCHES="$PROJECT_DIR/ThreeOneOSFive/views/PatchProjectsView.swift"
-
-          if [ ! -f "$PATCHES" ]; then
-            echo "❌ PatchProjectsView.swift not found: $PATCHES"
-            exit 1
-          fi
-
-          python3 -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]); s=p.read_text(encoding="utf-8"); start=s.index("    private func setServerPatchEnabled"); end=s.index("    private func syncActiveStates", start); mid=s[start:end]; old="                } else {\n                    await MainActor.run {\n                        userDisabledProjectIDs.insert(item.id)\n                        saveUserDisabledProjectIDs()\n                    }\n                    if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {\n                        try DevicePatchService.restore(receipt: receipt)\n                    }\n                }\n"; new="                } else {\n                    if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {\n                        try DevicePatchService.restore(\n                            receipt: receipt,\n                            allowChangedTargets: true\n                        )\n                    }\n                    await MainActor.run {\n                        userDisabledProjectIDs.insert(item.id)\n                        saveUserDisabledProjectIDs()\n                    }\n                }\n"; assert old in mid, "disable block not found"; mid=mid.replace(old,new,1); oldc="                    if !enabled {\n                        userDisabledProjectIDs.insert(item.id)\n                        saveUserDisabledProjectIDs()\n                    }\n"; newc="                    if !enabled {\n                        userDisabledProjectIDs.remove(item.id)\n                        saveUserDisabledProjectIDs()\n                    }\n"; assert mid.count(oldc)==2, "catch blocks not found"; mid=mid.replace(oldc,newc,2); s=s[:start]+mid+s[end:]; olds="    private func syncActiveStates() {\n        activeProjectIDs = Set(\n            store.items.compactMap { item in\n                guard !userDisabledProjectIDs.contains(item.id) else { return nil }\n                return DevicePatchService.latestReceipt(projectID: item.id) == nil ? nil : item.id\n            }\n        )\n    }\n"; news="    private func syncActiveStates() {\n        activeProjectIDs = Set(\n            store.items.compactMap { item in\n                DevicePatchService.latestReceipt(projectID: item.id) == nil ? nil : item.id\n            }\n        )\n    }\n"; assert olds in s, "sync block not found"; s=s.replace(olds,news,1); s=s.replace("try DevicePatchService.restore(receipt: receipt)\n        }\n        if let item = store.items.first", "try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)\n        }\n        if let item = store.items.first", 1); p.write_text(s,encoding="utf-8")' "$PATCHES"
-
-          echo "✅ Patched restore toggle behavior"
+          echo "✅ Source patch complete"
 
       # =========================================================
       # 5. Detect target
