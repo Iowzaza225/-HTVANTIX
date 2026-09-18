@@ -130,7 +130,65 @@ jobs:
           echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
 
       # =========================================================
-      # 4. Detect target
+      # 4. Patch source compatibility
+      # =========================================================
+      - name: Patch HTVINTEX source
+        shell: bash
+        run: |
+          set -e
+
+          PROJECT="${{ steps.source.outputs.project }}"
+          PROJECT_DIR="$(dirname "$PROJECT")"
+          SETTINGS="$PROJECT_DIR/ThreeOneOSFive/views/SettingsView.swift"
+
+          if [ ! -f "$SETTINGS" ]; then
+            echo "❌ SettingsView.swift not found: $SETTINGS"
+            exit 1
+          fi
+
+          python3 - "$SETTINGS" <<'PY'
+          import sys
+          from pathlib import Path
+
+          p = Path(sys.argv[1])
+          s = p.read_text(encoding="utf-8")
+
+          old = '''                Section("License") {
+                    LabeledContent("สถานะ") {
+'''
+          new = '''                Section {
+                    LabeledContent("สถานะ") {
+'''
+
+          if old not in s:
+              print("⚠️ License section opening already patched or not found")
+          else:
+              s = s.replace(old, new, 1)
+
+          old2 = '''                    }
+                } footer: {
+                    Text("เมื่อออกจาก License แอปจะกลับไปที่หน้ากรอกคีย์")
+                }
+'''
+          new2 = '''                    }
+                } header: {
+                    Text("License")
+                } footer: {
+                    Text("เมื่อออกจาก License แอปจะกลับไปที่หน้ากรอกคีย์")
+                }
+'''
+
+          if old2 not in s:
+              print("⚠️ License section footer pattern already patched or not found")
+          else:
+              s = s.replace(old2, new2, 1)
+
+          p.write_text(s, encoding="utf-8")
+          print("✅ SettingsView.swift patched for current SwiftUI Section syntax")
+          PY
+
+      # =========================================================
+      # 5. Detect target
       # =========================================================
       - name: Detect Xcode target
         id: target
@@ -196,8 +254,6 @@ jobs:
           rm -rf "$GITHUB_WORKSPACE/build"
           rm -rf "$GITHUB_WORKSPACE/ipa"
 
-          mkdir -p "$GITHUB_WORKSPACE/build/products"
-          mkdir -p "$GITHUB_WORKSPACE/build/obj"
           mkdir -p "$GITHUB_WORKSPACE/ipa"
 
       # =========================================================
@@ -233,7 +289,7 @@ jobs:
             CONFIGURATION_BUILD_DIR="$GITHUB_WORKSPACE/build/products" \
             OBJROOT="$GITHUB_WORKSPACE/build/obj" \
             SYMROOT="$GITHUB_WORKSPACE/build" \
-            clean build \
+            build \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
       # =========================================================
