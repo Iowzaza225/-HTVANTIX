@@ -643,7 +643,7 @@ new_server_controls = """            if isWorking {
                     Text("กำลังทำงาน")
                         .font(.caption2.weight(.bold))
                 }
-                .frame(minWidth: 92, height: 34)
+                .frame(minWidth: 92)\n                .frame(height: 34)
             } else if item.isLocked {
                 Button {
                     store.requestUnlock(for: item)
