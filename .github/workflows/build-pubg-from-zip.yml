@@ -172,6 +172,9 @@ jobs:
             DISPLAY_ID="$PROJECT_DIR/ThreeOneOSFive/helpers/DisplayIdentity.m"
             perl -0pi -e 's/(0x1e\n)\}/$1};/' "$DISPLAY_ID"
             echo "✅ UI V2 syntax hotfix applied"
+
+            python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_download_state_fix.py" "$PROJECT_DIR"
+            echo "✅ UI V2 download-state fix applied"
           else
             python3 "$GITHUB_WORKSPACE/.github/scripts/patch_htvintex.py" "$PROJECT_DIR"
             echo "✅ Source patch complete"
