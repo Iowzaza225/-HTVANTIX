@@ -109,7 +109,7 @@ row = re.sub(
     row,
     count=1,
 )
-if "HTVGameIcon(game: remote.game ?? "ff", size: 44)" not in row:
+if 'HTVGameIcon(game: remote.game ?? "ff", size: 44)' not in row:
     raise RuntimeError("serverPatchRow icon block not found")
 s = s[:row_start] + row + s[row_end:]
 patch.write_text(s)
