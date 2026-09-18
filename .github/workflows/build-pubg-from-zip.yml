@@ -129,6 +129,21 @@ jobs:
 
           echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
 
+      - name: Inspect original restore implementation
+        shell: bash
+        run: |
+          PROJECT="${{ steps.source.outputs.project }}"
+          PROJECT_DIR="$(dirname "$PROJECT")"
+          echo "===== ORIGINAL RESTORE SYMBOLS ====="
+          grep -R -n -E "func restore|static func restore|restoreTargetsChanged|latestReceipt|inspectRestore" "$PROJECT_DIR/ThreeOneOSFive" | head -200 || true
+          echo "===== ORIGINAL PatchTransaction restore ====="
+          FILE="$PROJECT_DIR/ThreeOneOSFive/helpers/PatchTransaction.swift"
+          if [ -f "$FILE" ]; then
+            grep -n -A140 -B20 "static func restore" "$FILE" || grep -n -A140 -B20 "func restore" "$FILE" || true
+          fi
+          echo "===== ORIGINAL DevicePatchService ====="
+          grep -R -n -A120 -B20 "enum DevicePatchService\|struct DevicePatchService\|class DevicePatchService" "$PROJECT_DIR/ThreeOneOSFive" || true
+
       # =========================================================
       # 4. Patch HTVINTEX source for production behavior
       # =========================================================
