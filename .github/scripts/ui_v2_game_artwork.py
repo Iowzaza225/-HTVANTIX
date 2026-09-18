@@ -1,5 +1,5 @@
 from pathlib import Path
-import base64, json, re, sys
+import base64, json, re, sys, subprocess
 
 root = Path(sys.argv[1])
 project = root / "ThreeOneOSFive"
@@ -9,10 +9,21 @@ repo_assets = Path(__file__).resolve().parent.parent / "assets"
 def install_imageset(name: str, source_name: str):
     target = assets / f"{name}.imageset"
     target.mkdir(parents=True, exist_ok=True)
-    dst_name = f"{name}.jpg"
-    # Use the checked-in JPEG directly so the app receives the exact artwork
-    # without decode/re-encode or quality loss.
-    (target / dst_name).write_bytes((repo_assets / source_name).read_bytes())
+
+    # Normalize supplied artwork through macOS ImageIO before actool sees it.
+    # This keeps the full icon visible and avoids JPEG decoding issues in the
+    # asset compiler. 256x256 is comfortably above the largest 62pt @3x use.
+    src = repo_assets / source_name
+    dst_name = f"{name}.png"
+    dst = target / dst_name
+    subprocess.run(
+        ["/usr/bin/sips", "-s", "format", "png", "-z", "256", "256",
+         str(src), "--out", str(dst)],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
     contents = {
         "images": [
             {"filename": dst_name, "idiom": "universal", "scale": "1x"},
