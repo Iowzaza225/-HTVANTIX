@@ -146,46 +146,12 @@ jobs:
             exit 1
           fi
 
-          python3 - "$SETTINGS" <<'PY'
-          import sys
-          from pathlib import Path
+          sed -i '' '0,/Section("License") {/s//Section {/' "$SETTINGS"
 
-          p = Path(sys.argv[1])
-          s = p.read_text(encoding="utf-8")
+          python3 -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]); s=p.read_text(encoding="utf-8"); old="                } footer: {\\n                    Text(\\\"เมื่อออกจาก License แอปจะกลับไปที่หน้ากรอกคีย์\\\")"; new="                } header: {\\n                    Text(\\\"License\\\")\\n                } footer: {\\n                    Text(\\\"เมื่อออกจาก License แอปจะกลับไปที่หน้ากรอกคีย์\\\")"; s=s.replace(old,new,1); p.write_text(s,encoding="utf-8")' "$SETTINGS"
 
-          old = '''                Section("License") {
-                    LabeledContent("สถานะ") {
-'''
-          new = '''                Section {
-                    LabeledContent("สถานะ") {
-'''
-
-          if old not in s:
-              print("⚠️ License section opening already patched or not found")
-          else:
-              s = s.replace(old, new, 1)
-
-          old2 = '''                    }
-                } footer: {
-                    Text("เมื่อออกจาก License แอปจะกลับไปที่หน้ากรอกคีย์")
-                }
-'''
-          new2 = '''                    }
-                } header: {
-                    Text("License")
-                } footer: {
-                    Text("เมื่อออกจาก License แอปจะกลับไปที่หน้ากรอกคีย์")
-                }
-'''
-
-          if old2 not in s:
-              print("⚠️ License section footer pattern already patched or not found")
-          else:
-              s = s.replace(old2, new2, 1)
-
-          p.write_text(s, encoding="utf-8")
-          print("✅ SettingsView.swift patched for current SwiftUI Section syntax")
-          PY
+          echo "✅ Patched SettingsView.swift"
+          grep -n -A28 -B2 'Section {' "$SETTINGS" | head -80 || true
 
       # =========================================================
       # 5. Detect target
