@@ -1036,3 +1036,136 @@ with plist_path.open("wb") as fh:
     plistlib.dump(plist, fh, fmt=plistlib.FMT_XML, sort_keys=False)
 
 print("HTVINTEX final premium controls/privacy overrides applied")
+
+
+# HTVINTEX SETTINGS / BRAND UI CLEANUP
+# UI-only cleanup. Core patch/apply/restore/license behavior is not changed here.
+
+# 1) Settings: keep brand, license, device and supported versions only.
+rel = "ThreeOneOSFive/views/SettingsView.swift"
+s = read(rel)
+
+# Remove settings-only state that is no longer shown.
+s = s.replace(
+    '    @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.english.rawValue\n',
+    '',
+    1
+)
+s = s.replace(
+    '    @AppStorage(FeatureVisibility.cleanerStorageKey) private var cleanerEnabled = true\n',
+    '',
+    1
+)
+
+# Remove Language + Features/Cleaner + Wallpapers block without touching their underlying logic.
+start = s.find('                Section(language.text("settings.language")) {')
+end = s.find('                Section(language.text("common.device")) {', start)
+if start >= 0 and end > start:
+    s = s[:start] + s[end:]
+
+# Remove Social media + Credits UI and all personal links from Settings.
+start = s.find('                Section(language.text("settings.social_media")) {')
+form_end = s.find('\n            }\n            .tint(AppTheme.accent)', start)
+if start >= 0 and form_end > start:
+    s = s[:start] + s[form_end:]
+
+# Cleaner, more premium labels.
+s = s.replace('Section("License") {', 'Section("สมาชิก HTVINTEX") {', 1)
+s = s.replace(
+    '.navigationTitle("HTVINTEX Settings")',
+    '.navigationTitle("ตั้งค่า HTVINTEX")',
+    1
+)
+s = s.replace(
+    'Button(language.text("common.done")) { dismiss() }',
+    'Button("เสร็จสิ้น") { dismiss() }',
+    1
+)
+
+# Premium background without changing any actions/data.
+if '.scrollContentBackground(.hidden)' not in s:
+    s = s.replace(
+        '            .tint(AppTheme.accent)\n',
+        '            .tint(AppTheme.accent)\n            .scrollContentBackground(.hidden)\n            .background(AppTheme.pageBackground)\n',
+        1
+    )
+
+write(rel, s)
+
+# 2) Remove hidden attribution/credit sheet gesture from the app UI.
+rel = "ThreeOneOSFive/App.swift"
+s = read(rel)
+s = s.replace('    @State private var showAttribution = false\n', '', 1)
+attribution_chain = """            .displayIdentityAttribution(
+                isPresented: $showAttribution,
+                enabled: !showOnboarding && !licenseManager.requiresLicenseGate
+            )
+            .sheet(isPresented: $showAttribution) {
+                DisplayAttributionSheet()
+            }
+"""
+s = s.replace(attribution_chain, '', 1)
+write(rel, s)
+
+# 3) Brand the package section and remove the web-sync explanatory footer.
+rel = "ThreeOneOSFive/views/PatchProjectsView.swift"
+s = read(rel)
+s = s.replace('Text("HTVINTEX SERVER")', 'Text("HTVINTEX")')
+s = s.replace(
+    """                            } footer: {
+                                Text("ไฟล์ที่เปิดใช้งานจากหน้าเว็บจะซิงก์เข้ามาที่นี่อัตโนมัติ")
+                            }""",
+    """                            }""",
+    1
+)
+write(rel, s)
+
+# 4) Remove personal credit names from compiled repository metadata.
+rel = "ThreeOneOSFive/helpers/PackageRepositoryStore.swift"
+s = read(rel)
+s = s.replace('author: "YangJiii"', 'author: "HTVINTEX"')
+write(rel, s)
+
+# 5) Remove personal-credit strings from localized resources.
+for loc in ["en.lproj/Localizable.strings", "vi.lproj/Localizable.strings", "zh-Hans.lproj/Localizable.strings"]:
+    rel = "ThreeOneOSFive/" + loc
+    s = read(rel)
+    lines = []
+    for line in s.splitlines():
+        if '"credit.' in line:
+            continue
+        if '"social.' in line:
+            continue
+        if '"settings.credits"' in line or '"settings.social_media"' in line:
+            continue
+        if '"attribution.' in line:
+            continue
+        if '"accessibility.open_profile"' in line or '"accessibility.open_github"' in line:
+            continue
+        if '"onboarding.welcome_message"' in line:
+            if loc.startswith("en."):
+                line = '"onboarding.welcome_message" = "HTVINTEX";'
+            elif loc.startswith("vi."):
+                line = '"onboarding.welcome_message" = "HTVINTEX";'
+            else:
+                line = '"onboarding.welcome_message" = "HTVINTEX";'
+        lines.append(line)
+    write(rel, "\n".join(lines) + "\n")
+
+# 6) Keep the internal display-identity token mechanism, but replace the old
+# attribution URL seed with a neutral GPL license URL. This removes the old
+# personal-credit link from the built IPA without changing patch logic.
+rel = "ThreeOneOSFive/helpers/DisplayIdentity.m"
+s = read(rel)
+start = s.find("static const uint8_t kAttributionSeed[] = {")
+end = s.find("};", start)
+if start >= 0 and end > start:
+    new_seed = """static const uint8_t kAttributionSeed[] = {
+    0x32,0x15,0x1c,0x1f,0x05,0x47,0xab,0xa4,0xe5,0xee,0xd7,0x89,0xc9,0xdb,
+    0xc9,0xed,0xa5,0xa3,0xbf,0xf0,0x8a,0x84,0x97,0x9e,0x6c,0x7a,0x75,0x64,
+    0x31,0x42,0x5c,0x5f,0x17,0x72,0x66,0x7f,0x78,0x35,0x10,0x06,0x1e
+}"""
+    s = s[:start] + new_seed + s[end + 2:]
+write(rel, s)
+
+print("HTVINTEX settings/branding UI cleanup applied")
