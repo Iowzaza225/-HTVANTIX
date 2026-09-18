@@ -1,76 +1,67 @@
-name: Build HTVINTEX IPA
+name: HTVINTEX 1.1.5 Build 8
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "**/*.swift"
-      - "**/*.plist"
-      - "**/*.entitlements"
-      - "**/*.xcodeproj/**"
-      - ".github/workflows/build-htvintex.yml"
 
 jobs:
-  build:
-    name: Build HTVINTEX 1.1.5
+  build-htvintex:
+    name: Build HTVINTEX 1.1.5 B8
     runs-on: macos-latest
 
     steps:
-      # ─────────────────────────────
-      # 1. โหลด Source จาก GitHub
-      # ─────────────────────────────
-      - name: Checkout repository
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      # ─────────────────────────────
-      # 2. แสดง Xcode ที่ใช้งาน
-      # ─────────────────────────────
-      - name: Show Xcode version
+      - name: Show environment
         run: |
+          echo "===== XCODE ====="
           xcodebuild -version
+
+          echo "===== SWIFT ====="
           swift --version
 
-      # ─────────────────────────────
-      # 3. หาไฟล์ Xcode Project
-      # ─────────────────────────────
+          echo "===== FILES ====="
+          find . -maxdepth 3 -type d -name "*.xcodeproj" -print
+
       - name: Locate Xcode project
         id: project
         shell: bash
         run: |
-          PROJECT=$(find . -name "ThreeOneOSFive.xcodeproj" -type d | head -n 1)
+          PROJECT="$(find "$GITHUB_WORKSPACE" \
+            -type d \
+            -name "ThreeOneOSFive.xcodeproj" \
+            | head -n 1)"
 
           if [ -z "$PROJECT" ]; then
             echo "❌ ThreeOneOSFive.xcodeproj not found"
             exit 1
           fi
 
-          echo "Found project: $PROJECT"
+          echo "✅ Project: $PROJECT"
           echo "path=$PROJECT" >> "$GITHUB_OUTPUT"
 
-      # ─────────────────────────────
-      # 4. ดู Scheme
-      # ─────────────────────────────
-      - name: Show project schemes
+      - name: Show Xcode targets
+        shell: bash
         run: |
           xcodebuild \
             -project "${{ steps.project.outputs.path }}" \
             -list
 
-      # ─────────────────────────────
-      # 5. Build Release แบบไม่เซ็น
-      # ─────────────────────────────
+      - name: Clean old build
+        shell: bash
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/build"
+          rm -rf "$GITHUB_WORKSPACE/ipa"
+          rm -f "$GITHUB_WORKSPACE/"*.ipa
+
       - name: Build HTVINTEX
         shell: bash
         run: |
           set -o pipefail
 
-          rm -rf build
-
           xcodebuild \
             -project "${{ steps.project.outputs.path }}" \
-            -scheme "ThreeOneOSFive" \
+            -target "3105" \
             -configuration Release \
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
@@ -82,88 +73,96 @@ jobs:
             CURRENT_PROJECT_VERSION="8" \
             clean build
 
-      # ─────────────────────────────
-      # 6. หาไฟล์ .app
-      # ─────────────────────────────
-      - name: Locate built app
+      - name: Find built application
         id: app
         shell: bash
         run: |
-          APP=$(find "$GITHUB_WORKSPACE/build/Build/Products" \
+          echo "Searching for .app..."
+
+          APP="$(find "$GITHUB_WORKSPACE/build" \
             -type d \
             -name "*.app" \
-            | head -n 1)
+            | head -n 1)"
 
           if [ -z "$APP" ]; then
-            echo "❌ Built .app not found"
+            echo "❌ .app not found"
+
+            echo "===== BUILD CONTENTS ====="
+            find "$GITHUB_WORKSPACE/build" \
+              -maxdepth 6 \
+              -type d \
+              | head -200 || true
+
             exit 1
           fi
 
-          echo "Found app:"
+          echo "✅ Found app:"
           echo "$APP"
 
           echo "path=$APP" >> "$GITHUB_OUTPUT"
 
-      # ─────────────────────────────
-      # 7. สร้าง Payload
-      # ─────────────────────────────
-      - name: Create IPA Payload
+      - name: Create Payload
         shell: bash
         run: |
-          rm -rf "$GITHUB_WORKSPACE/ipa"
           mkdir -p "$GITHUB_WORKSPACE/ipa/Payload"
 
           cp -R \
             "${{ steps.app.outputs.path }}" \
             "$GITHUB_WORKSPACE/ipa/Payload/"
 
-      # ─────────────────────────────
-      # 8. Package เป็น IPA
-      # ─────────────────────────────
-      - name: Package unsigned IPA
+          echo "===== PAYLOAD ====="
+          ls -la "$GITHUB_WORKSPACE/ipa/Payload"
+
+      - name: Verify version
         shell: bash
         run: |
-          cd "$GITHUB_WORKSPACE/ipa"
-
-          zip -qry \
-            "$GITHUB_WORKSPACE/HTVINTEX-1.1.5-Build8-Unsigned.ipa" \
-            Payload
-
-          echo "✅ IPA created"
-          ls -lh "$GITHUB_WORKSPACE/HTVINTEX-1.1.5-Build8-Unsigned.ipa"
-
-      # ─────────────────────────────
-      # 9. แสดงข้อมูล Version
-      # ─────────────────────────────
-      - name: Verify IPA version
-        shell: bash
-        run: |
-          APP_PLIST=$(find "$GITHUB_WORKSPACE/ipa/Payload" \
+          PLIST="$(find "$GITHUB_WORKSPACE/ipa/Payload" \
             -path "*.app/Info.plist" \
-            | head -n 1)
+            | head -n 1)"
 
-          echo "App Info:"
+          if [ -z "$PLIST" ]; then
+            echo "❌ Info.plist not found"
+            exit 1
+          fi
+
+          echo "===== HTVINTEX BUILD INFO ====="
+
+          echo -n "Display Name: "
           /usr/libexec/PlistBuddy \
             -c "Print :CFBundleDisplayName" \
-            "$APP_PLIST" || true
+            "$PLIST" || true
 
           echo -n "Version: "
           /usr/libexec/PlistBuddy \
             -c "Print :CFBundleShortVersionString" \
-            "$APP_PLIST"
+            "$PLIST"
 
           echo -n "Build: "
           /usr/libexec/PlistBuddy \
             -c "Print :CFBundleVersion" \
-            "$APP_PLIST"
+            "$PLIST"
 
-      # ─────────────────────────────
-      # 10. Upload IPA ให้โหลดใน Actions
-      # ─────────────────────────────
+          echo -n "Bundle ID: "
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleIdentifier" \
+            "$PLIST" || true
+
+      - name: Create unsigned IPA
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE/ipa"
+
+          IPA="$GITHUB_WORKSPACE/HTVINTEX-1.1.5-B8-${{ github.run_number }}-Unsigned.ipa"
+
+          zip -qry "$IPA" Payload
+
+          echo "✅ IPA created:"
+          ls -lh "$IPA"
+
       - name: Upload HTVINTEX IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVINTEX-1.1.5-Build8-Unsigned
-          path: HTVINTEX-1.1.5-Build8-Unsigned.ipa
+          name: HTVINTEX-1.1.5-B8-${{ github.run_number }}
+          path: HTVINTEX-1.1.5-B8-${{ github.run_number }}-Unsigned.ipa
           if-no-files-found: error
           retention-days: 30
