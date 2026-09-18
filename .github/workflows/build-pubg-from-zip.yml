@@ -177,14 +177,6 @@ jobs:
             echo "✅ UI V2 download-state fix applied"
 
             python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_game_artwork.py" "$PROJECT_DIR"
-
-            # Re-encode the supplied JPEG artwork with Apple's ImageIO so
-            # actool can distill the catalog reliably on device builds.
-            for IMG in               "$PROJECT_DIR/ThreeOneOSFive/Assets.xcassets/FreeFireIcon.imageset/FreeFireIcon.jpg"               "$PROJECT_DIR/ThreeOneOSFive/Assets.xcassets/FreeFireMaxIcon.imageset/FreeFireMaxIcon.jpg"; do
-              TMP="${IMG%.jpg}.baseline.jpg"
-              /usr/bin/sips -s format jpeg -s formatOptions 88 "$IMG" --out "$TMP" >/dev/null
-              mv "$TMP" "$IMG"
-            done
             echo "✅ Free Fire artwork installed in UI V2"
           else
             python3 "$GITHUB_WORKSPACE/.github/scripts/patch_htvintex.py" "$PROJECT_DIR"
