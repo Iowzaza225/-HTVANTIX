@@ -21,6 +21,16 @@ if 'Section("License") {' in s:
     s = s.replace('Section("License") {', 'Section {', 1)
 write(rel, s)
 
+# HTVINTEX bypass onboarding while keeping the original flow in source
+rel = "ThreeOneOSFive/App.swift"
+s = read(rel)
+s = s.replace(
+    "@State private var showOnboarding = OnboardingStore.shouldShow()",
+    "@State private var showOnboarding = false",
+    1
+)
+write(rel, s)
+
 # Home-only production navigation; hidden routes stay in source
 rel = "ThreeOneOSFive/helpers/AppTabNavigationState.swift"
 s = read(rel)
@@ -276,6 +286,11 @@ s = s.replace(
     1
 )
 s = s.replace(
+    ".disabled(store.isBusy || isWorking)",
+    ".disabled(isWorking)",
+    1
+)
+s = s.replace(
     "            for remote in remoteItems where serverCatalog.needsDownload(remote, localItems: store.items) {",
     "            for remote in remoteItems where serverCatalog.needsDownload(remote, localItems: store.items)\n                || serverCatalog.hasSharedLocalBinding(forRemoteID: remote.id) {",
     1
@@ -359,13 +374,16 @@ s = s.replace(
 restore_helper_marker = "    private func syncActiveStates() {"
 if "private func restoreServerPatchFully(projectID: UUID) throws" not in s:
     helper = """    private func restoreServerPatchFully(projectID: UUID) throws {
-        // One OFF tap performs both restore passes automatically.
+        // Mirror the app's proven Restore Originals flow without showing the
+        // second confirmation: inspect first, then approve changed targets
+        // automatically. If a second active receipt remains, repeat once.
         var attempts = 0
         while attempts < 2,
               let receipt = DevicePatchService.latestReceipt(projectID: projectID) {
+            let inspection = try DevicePatchService.inspectRestore(receipt: receipt)
             try DevicePatchService.restore(
                 receipt: receipt,
-                allowChangedTargets: true
+                allowChangedTargets: !inspection.changedTargets.isEmpty
             )
             attempts += 1
         }
@@ -538,9 +556,10 @@ new_prepare = """    private func prepareRestore() {
                 var attempts = 0
                 while attempts < 2,
                       let activeReceipt = DevicePatchService.latestReceipt(projectID: projectID) {
+                    let inspection = try DevicePatchService.inspectRestore(receipt: activeReceipt)
                     try DevicePatchService.restore(
                         receipt: activeReceipt,
-                        allowChangedTargets: allowChangedTargets
+                        allowChangedTargets: allowChangedTargets || !inspection.changedTargets.isEmpty
                     )
                     attempts += 1
                 }
