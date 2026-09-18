@@ -270,27 +270,6 @@ s = s.replace(
     '.navigationTitle(screenTitle ?? language.text("tab.installed"))\n            .navigationBarTitleDisplayMode(.inline)\n            .toolbar(.hidden, for: .tabBar)',
     1
 )
-toolbar = """            .toolbar {
-                // Production UI intentionally exposes Settings only. The former
-                // manual add/import and Logs flows remain in source but are hidden.
-                ToolbarItem(placement: .navigationBarTrailing) {"""
-if toolbar in s and "ToolbarItem(placement: .navigationBarLeading)" not in s[s.index(toolbar):s.index(toolbar)+900]:
-    s = s.replace(
-        toolbar,
-        """            .toolbar {
-                if gameFilter != nil {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button { dismiss() } label: {
-                            Image(systemName: "chevron.left")
-                        }
-                        .accessibilityLabel("Back")
-                    }
-                }
-                // Production UI intentionally exposes Settings only. The former
-                // manual add/import and Logs flows remain in source but are hidden.
-                ToolbarItem(placement: .navigationBarTrailing) {""",
-        1
-    )
 s = s.replace(
     "            for remote in remoteItems where serverCatalog.needsDownload(remote, localItems: store.items) {",
     "            for remote in remoteItems where serverCatalog.needsDownload(remote, localItems: store.items)\n                || serverCatalog.hasSharedLocalBinding(forRemoteID: remote.id) {",
