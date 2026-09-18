@@ -10,8 +10,9 @@ def install_imageset(name: str, source_name: str):
     target = assets / f"{name}.imageset"
     target.mkdir(parents=True, exist_ok=True)
     dst_name = f"{name}.jpg"
-    payload = (repo_assets / source_name).read_text().strip()
-    (target / dst_name).write_bytes(base64.b64decode(payload))
+    # Use the checked-in JPEG directly so the app receives the exact artwork
+    # without decode/re-encode or quality loss.
+    (target / dst_name).write_bytes((repo_assets / source_name).read_bytes())
     contents = {
         "images": [
             {"filename": dst_name, "idiom": "universal", "scale": "1x"},
@@ -22,8 +23,8 @@ def install_imageset(name: str, source_name: str):
     }
     (target / "Contents.json").write_text(json.dumps(contents, indent=2) + "\n")
 
-install_imageset("FreeFireIcon", "FreeFireIcon.b64")
-install_imageset("FreeFireMaxIcon", "FreeFireMaxIcon.b64")
+install_imageset("FreeFireIcon", "FreeFireIcon.jpg")
+install_imageset("FreeFireMaxIcon", "FreeFireMaxIcon.jpg")
 
 # Shared game artwork view.
 design = project / "views" / "DesignSystem.swift"
@@ -35,13 +36,16 @@ struct HTVGameIcon: View {
     var size: CGFloat = 44
 
     private var assetName: String {
-        game.lowercased() == "ffmax" ? "FreeFireMaxIcon" : "FreeFireIcon"
+        let key = game.lowercased()
+        return key.contains("max") ? "FreeFireMaxIcon" : "FreeFireIcon"
     }
 
     var body: some View {
         Image(assetName)
             .resizable()
-            .scaledToFill()
+            .interpolation(.high)
+            .antialiased(true)
+            .scaledToFit()
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
             .overlay(
@@ -114,4 +118,4 @@ if 'HTVGameIcon(game: remote.game ?? "ff", size: 44)' not in row:
 s = s[:row_start] + row + s[row_end:]
 patch.write_text(s)
 
-print("UI V2 Free Fire artwork installed in Home and patch cards")
+print("UI V2 game artwork installed with automatic Free Fire / MAX mapping")
