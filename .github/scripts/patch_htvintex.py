@@ -352,9 +352,14 @@ old_off = """                } else {
                 }"""
 new_off = """                } else {
                     if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
+                        // Mirror the original 3105 Restore Originals flow:
+                        // first inspect the active patch, then automatically perform
+                        // the same action as tapping “Restore Anyway” when files
+                        // changed after apply.
+                        let inspection = try DevicePatchService.inspectRestore(receipt: receipt)
                         try DevicePatchService.restore(
                             receipt: receipt,
-                            allowChangedTargets: true
+                            allowChangedTargets: !inspection.changedTargets.isEmpty
                         )
                     }
                     await MainActor.run {
