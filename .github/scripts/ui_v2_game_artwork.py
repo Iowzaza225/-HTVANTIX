@@ -1,5 +1,5 @@
 from pathlib import Path
-import json, re, shutil, sys
+import base64, json, re, sys
 
 root = Path(sys.argv[1])
 project = root / "ThreeOneOSFive"
@@ -10,7 +10,8 @@ def install_imageset(name: str, source_name: str):
     target = assets / f"{name}.imageset"
     target.mkdir(parents=True, exist_ok=True)
     dst_name = f"{name}.jpg"
-    shutil.copy2(repo_assets / source_name, target / dst_name)
+    payload = (repo_assets / source_name).read_text().strip()
+    (target / dst_name).write_bytes(base64.b64decode(payload))
     contents = {
         "images": [
             {"filename": dst_name, "idiom": "universal", "scale": "1x"},
@@ -21,8 +22,8 @@ def install_imageset(name: str, source_name: str):
     }
     (target / "Contents.json").write_text(json.dumps(contents, indent=2) + "\n")
 
-install_imageset("FreeFireIcon", "FreeFireIcon.jpg")
-install_imageset("FreeFireMaxIcon", "FreeFireMaxIcon.jpg")
+install_imageset("FreeFireIcon", "FreeFireIcon.b64")
+install_imageset("FreeFireMaxIcon", "FreeFireMaxIcon.b64")
 
 # Shared game artwork view.
 design = project / "views" / "DesignSystem.swift"
