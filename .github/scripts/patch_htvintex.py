@@ -31,6 +31,32 @@ s = s.replace(
 )
 write(rel, s)
 
+# HTVINTEX foreground access recovery
+rel = "ThreeOneOSFive/App.swift"
+s = read(rel)
+old = """        guard applicable else { return }
+
+        refreshKernelExploitStatus()
+        maybeAutoRunKernelExploit()"""
+new = """        guard applicable else { return }
+
+        // Returning from the target game can invalidate the sandbox escape.
+        // Re-arm the automatic exploit so restore/apply operations regain access.
+        if KernelExploit.requiresSandboxEscape,
+           !KernelExploit.hasSandboxAccess(),
+           !kernelExploitRunning {
+            autoRunAttempted = false
+            if exploitStatus.isSuccess || exploitStatus.isFailed {
+                exploitStatus = .notStarted
+            }
+        }
+
+        refreshKernelExploitStatus()
+        maybeAutoRunKernelExploit()"""
+if old in s:
+    s = s.replace(old, new, 1)
+write(rel, s)
+
 # Home-only production navigation; hidden routes stay in source
 rel = "ThreeOneOSFive/helpers/AppTabNavigationState.swift"
 s = read(rel)
@@ -371,6 +397,41 @@ s = s.replace(
                         saveUserDisabledProjectIDs()
                     }"""
 )
+# Wait for AppState to re-establish sandbox access after returning from the game.
+access_helper_marker = "    private func syncActiveStates() {"
+if "private func waitForPatchAccessIfNeeded" not in s:
+    helper = """    private func waitForPatchAccessIfNeeded(timeout: TimeInterval = 40) throws {
+        guard KernelExploit.requiresSandboxEscape else { return }
+        if KernelExploit.hasSandboxAccess() { return }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if KernelExploit.hasSandboxAccess() { return }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+
+        throw PatchPackageError.restoreFailed
+    }
+
+"""
+    s = s.replace(access_helper_marker, helper + access_helper_marker, 1)
+
+# Scope the edit to setServerPatchEnabled so other detached tasks are untouched.
+toggle_start = s.index("    private func setServerPatchEnabled")
+toggle_end = s.index("    private func syncActiveStates", toggle_start)
+toggle_block = s[toggle_start:toggle_end]
+old_toggle = """        Task.detached(priority: .userInitiated) {
+            do {
+                if enabled {"""
+new_toggle = """        Task.detached(priority: .userInitiated) {
+            do {
+                try waitForPatchAccessIfNeeded()
+
+                if enabled {"""
+if old_toggle in toggle_block:
+    toggle_block = toggle_block.replace(old_toggle, new_toggle, 1)
+s = s[:toggle_start] + toggle_block + s[toggle_end:]
+
 restore_helper_marker = "    private func syncActiveStates() {"
 if "private func restoreServerPatchFully(projectID: UUID) throws" not in s:
     helper = """    private func restoreServerPatchFully(projectID: UUID) throws {
@@ -466,6 +527,26 @@ detail_title_new = """.navigationTitle(item?.project?.name ?? language.text("pat
 if detail_title in s and detail_title_new not in s:
     s = s.replace(detail_title, detail_title_new, 1)
 
+detail_access_marker = "    private func prepareRestore() {"
+if "private func waitForDetailPatchAccessIfNeeded" not in s:
+    detail_index = s.index("private struct PatchProjectDetailView")
+    insert_at = s.index(detail_access_marker, detail_index)
+    helper = """    private func waitForDetailPatchAccessIfNeeded(timeout: TimeInterval = 40) throws {
+        guard KernelExploit.requiresSandboxEscape else { return }
+        if KernelExploit.hasSandboxAccess() { return }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if KernelExploit.hasSandboxAccess() { return }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+
+        throw PatchPackageError.restoreFailed
+    }
+
+"""
+    s = s[:insert_at] + helper + s[insert_at:]
+
 old_prepare = """    private func prepareRestore() {
         guard let receipt else { return }
         isWorking = true
@@ -553,6 +634,8 @@ new_prepare = """    private func prepareRestore() {
         isWorking = true
         Task.detached(priority: .userInitiated) {
             do {
+                try waitForDetailPatchAccessIfNeeded()
+
                 var attempts = 0
                 while attempts < 2,
                       let activeReceipt = DevicePatchService.latestReceipt(projectID: projectID) {
