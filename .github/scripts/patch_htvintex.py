@@ -333,6 +333,51 @@ s = replace_once(
     "unique remote package ID",
     "forcedPackageID: desiredLocalID"
 )
+# HTVINTEX one-tap original restore caller
+# Keep PatchTransaction / DevicePatchService untouched. The switch simply calls
+# the original restore once, but passes the user's OFF action as confirmation
+# for files that changed after apply.
+toggle_start = s.index("    private func setServerPatchEnabled")
+toggle_end = s.index("    private func syncActiveStates", toggle_start)
+toggle_block = s[toggle_start:toggle_end]
+
+old_off = """                } else {
+                    await MainActor.run {
+                        userDisabledProjectIDs.insert(item.id)
+                        saveUserDisabledProjectIDs()
+                    }
+                    if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
+                        try DevicePatchService.restore(receipt: receipt)
+                    }
+                }"""
+new_off = """                } else {
+                    if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
+                        try DevicePatchService.restore(
+                            receipt: receipt,
+                            allowChangedTargets: true
+                        )
+                    }
+                    await MainActor.run {
+                        userDisabledProjectIDs.insert(item.id)
+                        saveUserDisabledProjectIDs()
+                    }
+                }"""
+if old_off in toggle_block:
+    toggle_block = toggle_block.replace(old_off, new_off, 1)
+
+# If restore fails, keep the switch ON instead of falsely recording it OFF.
+old_catch = """                    if !enabled {
+                        userDisabledProjectIDs.insert(item.id)
+                        saveUserDisabledProjectIDs()
+                    }"""
+new_catch = """                    if !enabled {
+                        userDisabledProjectIDs.remove(item.id)
+                        saveUserDisabledProjectIDs()
+                    }"""
+toggle_block = toggle_block.replace(old_catch, new_catch)
+
+s = s[:toggle_start] + toggle_block + s[toggle_end:]
+
 anchor = """    func localPackageID(forRemoteID id: String) -> UUID? {
         guard let raw = remoteToLocal[id] else { return nil }
         return UUID(uuidString: raw)
