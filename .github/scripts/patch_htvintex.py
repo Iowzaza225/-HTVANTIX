@@ -488,10 +488,13 @@ if "private func restoreServerPatchFully(projectID: UUID) throws" not in s:
         guard let receipt = DevicePatchService.latestReceipt(projectID: projectID) else {
             return
         }
-        let inspection = try DevicePatchService.inspectRestore(receipt: receipt)
+
+        // The OFF switch is already the user's restore confirmation. The stock
+        // UI normally asks a second time when target files changed after apply.
+        // Auto-confirm that second step here so the user only taps OFF once.
         try DevicePatchService.restore(
             receipt: receipt,
-            allowChangedTargets: !inspection.changedTargets.isEmpty
+            allowChangedTargets: true
         )
 
         guard DevicePatchService.latestReceipt(projectID: projectID) == nil else {
