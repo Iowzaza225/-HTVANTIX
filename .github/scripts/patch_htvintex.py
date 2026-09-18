@@ -158,12 +158,14 @@ write(rel, s)
 # Patch screen: filter per game, remove search/cleaner, back button, independent remote IDs
 rel = "ThreeOneOSFive/views/PatchProjectsView.swift"
 s = read(rel)
-if "@Environment(\\.dismiss) private var dismiss" not in s:
-    s = s.replace(
-        "    @Environment(\\.appLanguage) private var language\n",
-        "    @Environment(\\.appLanguage) private var language\n    @Environment(\\.dismiss) private var dismiss\n",
-        1
+if "private var dismiss" not in s:
+    lines = s.splitlines()
+    index = next(
+        i for i, line in enumerate(lines)
+        if "@Environment" in line and "private var language" in line
     )
+    lines.insert(index + 1, "    @Environment(\\.dismiss) private var dismiss")
+    s = "\n".join(lines) + ("\n" if s.endswith("\n") else "")
 if "let gameFilter: String?" not in s:
     s = s.replace(
         "    let onOpenSettings: () -> Void\n    let onOpenLogs: () -> Void",
