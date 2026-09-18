@@ -142,7 +142,11 @@ jobs:
             grep -n -A140 -B20 "static func restore" "$FILE" || grep -n -A140 -B20 "func restore" "$FILE" || true
           fi
           echo "===== ORIGINAL DevicePatchService ====="
-          grep -R -n -A120 -B20 "enum DevicePatchService\|struct DevicePatchService\|class DevicePatchService" "$PROJECT_DIR/ThreeOneOSFive" || true
+          cat "$PROJECT_DIR/ThreeOneOSFive/helpers/DevicePatchService.swift" || true
+          echo "===== ORIGINAL LIST TOGGLE ====="
+          sed -n '500,590p' "$PROJECT_DIR/ThreeOneOSFive/views/PatchProjectsView.swift" || true
+          echo "===== ORIGINAL DETAIL RESTORE ====="
+          sed -n '1590,1685p' "$PROJECT_DIR/ThreeOneOSFive/views/PatchProjectsView.swift" || true
 
       # =========================================================
       # 4. Patch HTVINTEX source for production behavior
