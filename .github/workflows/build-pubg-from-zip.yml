@@ -170,17 +170,7 @@ jobs:
             # UI V2 source hotfix: the generated DisplayIdentity seed array
             # missed its trailing semicolon. Fix only this syntax issue.
             DISPLAY_ID="$PROJECT_DIR/ThreeOneOSFive/helpers/DisplayIdentity.m"
-            python3 - "$DISPLAY_ID" <<'PY'
-import pathlib, sys
-p = pathlib.Path(sys.argv[1])
-s = p.read_text()
-s = s.replace(
-    "    0x31,0x42,0x5c,0x5f,0x17,0x72,0x66,0x7f,0x78,0x35,0x10,0x06,0x1e\n}\n\n__attribute__",
-    "    0x31,0x42,0x5c,0x5f,0x17,0x72,0x66,0x7f,0x78,0x35,0x10,0x06,0x1e\n};\n\n__attribute__",
-    1
-)
-p.write_text(s)
-PY
+            perl -0pi -e 's/(0x1e\n)\}/$1};/' "$DISPLAY_ID"
             echo "✅ UI V2 syntax hotfix applied"
           else
             python3 "$GITHUB_WORKSPACE/.github/scripts/patch_htvintex.py" "$PROJECT_DIR"
