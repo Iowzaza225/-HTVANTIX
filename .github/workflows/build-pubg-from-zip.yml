@@ -162,9 +162,14 @@ jobs:
           PROJECT="${{ steps.source.outputs.project }}"
           PROJECT_DIR="$(dirname "$PROJECT")"
 
-          python3 "$GITHUB_WORKSPACE/.github/scripts/patch_htvintex.py" "$PROJECT_DIR"
-
-          echo "✅ Source patch complete"
+          # UI V2 ZIP is already the finished patched source. Re-running the
+          # legacy patcher would try to patch old UI structures a second time.
+          if [[ "$PROJECT_DIR" == *"HTVINTEX_1.1.5_BUILD8_UI_V2_SOURCE"* ]]; then
+            echo "✅ UI V2 source detected — skipping legacy source patcher"
+          else
+            python3 "$GITHUB_WORKSPACE/.github/scripts/patch_htvintex.py" "$PROJECT_DIR"
+            echo "✅ Source patch complete"
+          fi
 
       # =========================================================
       # 5. Detect target
