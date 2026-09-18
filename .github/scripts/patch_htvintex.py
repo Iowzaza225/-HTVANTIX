@@ -366,8 +366,12 @@ new_control = """            if isWorking {
 
 if old_control in s:
     s = s.replace(old_control, new_control, 1)
+elif new_control in s or "private func patchActionPill(" in s:
+    # Source is already on the premium-control UI; keep it and continue with
+    # the final overrides below.
+    pass
 else:
-    raise RuntimeError("Server row toggle block not found")
+    raise RuntimeError("Server row control block not found")
 
 # Use the receipt as the single source of truth for the visible active state.
 old_sync = """    private func syncActiveStates() {
