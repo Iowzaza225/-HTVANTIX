@@ -271,6 +271,11 @@ s = s.replace(
     1
 )
 s = s.replace(
+    ".disabled(store.isBusy || isWorking)",
+    ".disabled(isWorking)",
+    1
+)
+s = s.replace(
     "            for remote in remoteItems where serverCatalog.needsDownload(remote, localItems: store.items) {",
     "            for remote in remoteItems where serverCatalog.needsDownload(remote, localItems: store.items)\n                || serverCatalog.hasSharedLocalBinding(forRemoteID: remote.id) {",
     1
@@ -322,7 +327,11 @@ s = replace_once(
     "unique remote package ID",
     "forcedPackageID: desiredLocalID"
 )
-needle = """                        try DevicePatchService.restore(
+needle = """                    if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
+                        // The switch is the user's explicit request to turn the patch off.
+                        // Restore first, including targets that changed after apply, and only
+                        // persist the disabled state after the restore has actually succeeded.
+                        try DevicePatchService.restore(
                             receipt: receipt,
                             allowChangedTargets: true
                         )
@@ -331,13 +340,8 @@ needle = """                        try DevicePatchService.restore(
 if needle in s:
     s = s.replace(
         needle,
-        """                        try DevicePatchService.restore(
-                            receipt: receipt,
-                            allowChangedTargets: true
-                        )
-                        guard DevicePatchService.latestReceipt(projectID: item.id) == nil else {
-                            throw PatchPackageError.restoreFailed
-                        }
+        """                    if DevicePatchService.latestReceipt(projectID: item.id) != nil {
+                        try restoreServerPatchFully(projectID: item.id)
                     }
                     await MainActor.run {""",
         1
@@ -352,6 +356,28 @@ s = s.replace(
                         saveUserDisabledProjectIDs()
                     }"""
 )
+restore_helper_marker = "    private func syncActiveStates() {"
+if "private func restoreServerPatchFully(projectID: UUID) throws" not in s:
+    helper = """    private func restoreServerPatchFully(projectID: UUID) throws {
+        // One OFF tap performs both restore passes automatically.
+        var attempts = 0
+        while attempts < 2,
+              let receipt = DevicePatchService.latestReceipt(projectID: projectID) {
+            try DevicePatchService.restore(
+                receipt: receipt,
+                allowChangedTargets: true
+            )
+            attempts += 1
+        }
+
+        guard DevicePatchService.latestReceipt(projectID: projectID) == nil else {
+            throw PatchPackageError.restoreFailed
+        }
+    }
+
+"""
+    s = s.replace(restore_helper_marker, helper + restore_helper_marker, 1)
+
 old_sync = """    private func syncActiveStates() {
         activeProjectIDs = Set(
             store.items.compactMap { item in
@@ -374,7 +400,12 @@ if old_sync in s:
     )
 s = s.replace(
     "try DevicePatchService.restore(receipt: receipt)\n        }\n        if let item = store.items.first",
+    "try restoreServerPatchFully(projectID: localID)\n        }\n        if let item = store.items.first",
+    1
+)
+s = s.replace(
     "try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)\n        }\n        if let item = store.items.first",
+    "try restoreServerPatchFully(projectID: localID)\n        }\n        if let item = store.items.first",
     1
 )
 anchor = """    func localPackageID(forRemoteID id: String) -> UUID? {
