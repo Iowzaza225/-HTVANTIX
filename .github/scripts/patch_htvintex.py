@@ -281,6 +281,113 @@ s = s.replace(
     1
 )
 
+# HTVINTEX premium action buttons
+old_control = """            if isWorking {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 48)
+            } else if item.isLocked {
+                Button {
+                    store.requestUnlock(for: item)
+                } label: {
+                    Image(systemName: "lock.fill")
+                        .frame(width: 44, height: 32)
+                }
+                .buttonStyle(.borderless)
+            } else {
+                Toggle("", isOn: Binding(
+                    get: { activeProjectIDs.contains(item.id) },
+                    set: { newValue in setServerPatchEnabled(newValue, for: item) }
+                ))
+                .labelsHidden()
+                .disabled(store.isBusy || isWorking)
+                .tint(AppTheme.accent)
+            }"""
+
+new_control = """            if isWorking {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 88, height: 34)
+            } else if item.isLocked {
+                Button {
+                    store.requestUnlock(for: item)
+                } label: {
+                    Image(systemName: "lock.fill")
+                        .frame(width: 44, height: 32)
+                }
+                .buttonStyle(.borderless)
+            } else if isActive {
+                NavigationLink {
+                    PatchProjectDetailView(store: store, projectID: item.id)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.uturn.backward.circle.fill")
+                        Text("คืนค่า")
+                    }
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 12)
+                    .frame(height: 34)
+                    .background(
+                        Capsule()
+                            .fill(Color.red.opacity(0.12))
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.red.opacity(0.35), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button {
+                    setServerPatchEnabled(true, for: item)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bolt.fill")
+                        Text("เปิดใช้")
+                    }
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppTheme.accent)
+                    .padding(.horizontal, 12)
+                    .frame(height: 34)
+                    .background(
+                        Capsule()
+                            .fill(AppTheme.accent.opacity(0.12))
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(AppTheme.accent.opacity(0.35), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(store.isBusy || isWorking)
+            }"""
+
+if old_control in s:
+    s = s.replace(old_control, new_control, 1)
+else:
+    raise RuntimeError("Server row toggle block not found")
+
+# Use the receipt as the single source of truth for the visible active state.
+old_sync = """    private func syncActiveStates() {
+        activeProjectIDs = Set(
+            store.items.compactMap { item in
+                guard !userDisabledProjectIDs.contains(item.id) else { return nil }
+                return DevicePatchService.latestReceipt(projectID: item.id) == nil ? nil : item.id
+            }
+        )
+    }"""
+new_sync = """    private func syncActiveStates() {
+        activeProjectIDs = Set(
+            store.items.compactMap { item in
+                DevicePatchService.latestReceipt(projectID: item.id) == nil ? nil : item.id
+            }
+        )
+    }"""
+if old_sync in s:
+    s = s.replace(old_sync, new_sync, 1)
+
+
 s = s.replace(
     "            for remote in remoteItems where serverCatalog.needsDownload(remote, localItems: store.items) {",
     "            for remote in remoteItems where serverCatalog.needsDownload(remote, localItems: store.items)\n                || serverCatalog.hasSharedLocalBinding(forRemoteID: remote.id) {",
@@ -333,56 +440,6 @@ s = replace_once(
     "unique remote package ID",
     "forcedPackageID: desiredLocalID"
 )
-# HTVINTEX one-tap original restore caller
-# Keep PatchTransaction / DevicePatchService untouched. The switch simply calls
-# the original restore once, but passes the user's OFF action as confirmation
-# for files that changed after apply.
-toggle_start = s.index("    private func setServerPatchEnabled")
-toggle_end = s.index("    private func syncActiveStates", toggle_start)
-toggle_block = s[toggle_start:toggle_end]
-
-old_off = """                } else {
-                    await MainActor.run {
-                        userDisabledProjectIDs.insert(item.id)
-                        saveUserDisabledProjectIDs()
-                    }
-                    if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
-                        try DevicePatchService.restore(receipt: receipt)
-                    }
-                }"""
-new_off = """                } else {
-                    if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
-                        // Mirror the original 3105 Restore Originals flow:
-                        // first inspect the active patch, then automatically perform
-                        // the same action as tapping “Restore Anyway” when files
-                        // changed after apply.
-                        let inspection = try DevicePatchService.inspectRestore(receipt: receipt)
-                        try DevicePatchService.restore(
-                            receipt: receipt,
-                            allowChangedTargets: !inspection.changedTargets.isEmpty
-                        )
-                    }
-                    await MainActor.run {
-                        userDisabledProjectIDs.insert(item.id)
-                        saveUserDisabledProjectIDs()
-                    }
-                }"""
-if old_off in toggle_block:
-    toggle_block = toggle_block.replace(old_off, new_off, 1)
-
-# If restore fails, keep the switch ON instead of falsely recording it OFF.
-old_catch = """                    if !enabled {
-                        userDisabledProjectIDs.insert(item.id)
-                        saveUserDisabledProjectIDs()
-                    }"""
-new_catch = """                    if !enabled {
-                        userDisabledProjectIDs.remove(item.id)
-                        saveUserDisabledProjectIDs()
-                    }"""
-toggle_block = toggle_block.replace(old_catch, new_catch)
-
-s = s[:toggle_start] + toggle_block + s[toggle_end:]
-
 anchor = """    func localPackageID(forRemoteID id: String) -> UUID? {
         guard let raw = remoteToLocal[id] else { return nil }
         return UUID(uuidString: raw)
