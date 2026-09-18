@@ -1,4 +1,4 @@
-name: Build MASH PRO IPA
+name: Build HTVINTEX IPA
 
 on:
   workflow_dispatch:
@@ -6,209 +6,164 @@ on:
     branches:
       - main
     paths:
-      - '.github/workflows/build-pubg-from-zip.yml'
+      - "**/*.swift"
+      - "**/*.plist"
+      - "**/*.entitlements"
+      - "**/*.xcodeproj/**"
+      - ".github/workflows/build-htvintex.yml"
 
 jobs:
   build:
+    name: Build HTVINTEX 1.1.5
     runs-on: macos-latest
 
     steps:
+      # ─────────────────────────────
+      # 1. โหลด Source จาก GitHub
+      # ─────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode
+      # ─────────────────────────────
+      # 2. แสดง Xcode ที่ใช้งาน
+      # ─────────────────────────────
+      - name: Show Xcode version
         run: |
-          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
+          swift --version
 
-      - name: Extract MASH PRO source
+      # ─────────────────────────────
+      # 3. หาไฟล์ Xcode Project
+      # ─────────────────────────────
+      - name: Locate Xcode project
+        id: project
         shell: bash
         run: |
-          set -e
+          PROJECT=$(find . -name "ThreeOneOSFive.xcodeproj" -type d | head -n 1)
 
-          ZIP_FILE="$(find . -maxdepth 2 -type f -name 'MASH_PRO_V1.0.6_BUILD6*.zip' | head -1)"
-          if [ -z "$ZIP_FILE" ]; then
-            echo "❌ ไม่พบ MASH_PRO_V1.0.6_BUILD6 ZIP"
-            find . -maxdepth 2 -type f -print
+          if [ -z "$PROJECT" ]; then
+            echo "❌ ThreeOneOSFive.xcodeproj not found"
             exit 1
           fi
 
-          rm -rf mash-source
-          mkdir -p mash-source
-          unzip -q "$ZIP_FILE" -d mash-source
+          echo "Found project: $PROJECT"
+          echo "path=$PROJECT" >> "$GITHUB_OUTPUT"
 
-          PROJECT="$(find mash-source -name 'ThreeOneOSFive.xcodeproj' -type d | head -1)"
-          APP_SRC="$(find mash-source -path '*/Client/ThreeOneOSFive' -type d | head -1)"
+      # ─────────────────────────────
+      # 4. ดู Scheme
+      # ─────────────────────────────
+      - name: Show project schemes
+        run: |
+          xcodebuild \
+            -project "${{ steps.project.outputs.path }}" \
+            -list
 
-          if [ -z "$PROJECT" ] || [ -z "$APP_SRC" ]; then
-            echo "❌ Source structure ไม่ถูกต้อง"
-            exit 1
-          fi
-
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "APP_SRC=$APP_SRC" >> "$GITHUB_ENV"
-          echo "✅ Project: $PROJECT"
-
-      - name: Apply MASH PRO fixes
+      # ─────────────────────────────
+      # 5. Build Release แบบไม่เซ็น
+      # ─────────────────────────────
+      - name: Build HTVINTEX
         shell: bash
         run: |
-          set -e
+          set -o pipefail
 
-          python3 <<'PY'
-          from pathlib import Path
-          import os
-
-          app = Path(os.environ['APP_SRC'])
-          project = Path(os.environ['PROJECT']) / 'project.pbxproj'
-
-          # Branding / version
-          s = project.read_text(encoding='utf-8')
-          s = s.replace('INFOPLIST_KEY_CFBundleDisplayName = Viperxmod;', 'INFOPLIST_KEY_CFBundleDisplayName = "MASH PRO";')
-          s = s.replace('INFOPLIST_KEY_CFBundleDisplayName = MASH PRO;', 'INFOPLIST_KEY_CFBundleDisplayName = "MASH PRO";')
-          s = s.replace('CURRENT_PROJECT_VERSION = 1;', 'CURRENT_PROJECT_VERSION = 6;')
-          s = s.replace('MARKETING_VERSION = 1.0.0;', 'MARKETING_VERSION = 1.0.6;')
-          project.write_text(s, encoding='utf-8')
-
-          # App ID used by License / Version Gate / Catalog must be exactly: mashpro
-          # Replace the old internal App ID in Swift source while leaving the server URL unchanged.
-          for p in app.rglob('*.swift'):
-              text = p.read_text(encoding='utf-8')
-              original = text
-              text = text.replace('"viperxmod"', '"mashpro"')
-              text = text.replace('viperxmod.remote.', 'mashpro.remote.')
-              if text != original:
-                  p.write_text(text, encoding='utf-8')
-
-          # GBox/sideload runtime compatibility.
-          app_swift = app / 'App.swift'
-          text = app_swift.read_text(encoding='utf-8')
-          text = text.replace(
-              'HTVAntiDebug.enforce()',
-              '// HTVAntiDebug startup enforcement disabled for sideload compatibility'
-          )
-          text = text.replace('htvantix.captureProtectionEnabled', 'mashpro.captureProtectionEnabled')
-          text = text.replace('VIPERXMOD SYSTEM', 'MASH PRO SYSTEM')
-          text = text.replace('VIPERXMOD • Secure Session', 'MASH PRO • Secure Session')
-          text = text.replace('secureTextField.text = "VIPERXMOD"', 'secureTextField.text = "MASH PRO"')
-          text = text.replace('Text("VIPERXMOD")', 'Text("MASH PRO")')
-          text = text.replace('Viperxmod ถูกปิดใช้งานจากระบบ', 'MASH PRO ถูกปิดใช้งานจากระบบ')
-          text = text.replace('คีย์นี้ไม่ได้สร้างสำหรับ Viperxmod', 'คีย์นี้ไม่ได้สร้างสำหรับ MASH PRO')
-          app_swift.write_text(text, encoding='utf-8')
-
-          settings = app / 'views/SettingsView.swift'
-          text = settings.read_text(encoding='utf-8')
-          text = text.replace('htvantix.captureProtectionEnabled', 'mashpro.captureProtectionEnabled')
-          text = text.replace('Text("VIPERXMOD")', 'Text("MASH PRO")')
-          settings.write_text(text, encoding='utf-8')
-
-          content = app / 'ContentView.swift'
-          text = content.read_text(encoding='utf-8')
-          text = text.replace('VIPERXMOD SYSTEM', 'MASH PRO SYSTEM')
-          text = text.replace('VIPERXMOD • Secure Session', 'MASH PRO • Secure Session')
-          text = text.replace('Text("VIPERXMOD")', 'Text("MASH PRO")')
-          content.write_text(text, encoding='utf-8')
-
-          # Verification: startup anti-debug call must be gone and old App ID must not remain.
-          verify = app_swift.read_text(encoding='utf-8')
-          if 'HTVAntiDebug.enforce()' in verify:
-              raise SystemExit('Anti-debug startup call still present')
-
-          old_appid_hits = []
-          for p in app.rglob('*.swift'):
-              text = p.read_text(encoding='utf-8')
-              if '"viperxmod"' in text:
-                  old_appid_hits.append(str(p))
-          if old_appid_hits:
-              raise SystemExit('Old viperxmod App ID still present: ' + ', '.join(old_appid_hits))
-          PY
-
-          /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName MASH PRO' "$APP_SRC/Info.plist"
-          /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 1.0.6' "$APP_SRC/Info.plist"
-          /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 6' "$APP_SRC/Info.plist"
-          /usr/libexec/PlistBuddy -c 'Set :AppReleaseDisplayVersion 1.0.6' "$APP_SRC/Info.plist" || true
-
-          echo '--- MASH PRO verification ---'
-          echo 'App ID expected: mashpro'
-          grep -Rni --include='*.swift' 'appId.*mashpro\|"mashpro"' "$APP_SRC" | head -30 || true
-          grep -n 'CFBundleDisplayName\|CFBundleShortVersionString\|CFBundleVersion' "$APP_SRC/Info.plist" || true
-
-      - name: Detect scheme
-        shell: bash
-        run: |
-          set -e
-          SCHEME=$(xcodebuild -project "$PROJECT" -list -json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["project"]["schemes"][0])')
-          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          echo "✅ Scheme: $SCHEME"
-
-      - name: Build MASH PRO
-        shell: bash
-        run: |
-          set -e
+          rm -rf build
 
           xcodebuild \
-            -project "$PROJECT" \
-            -scheme "$SCHEME" \
+            -project "${{ steps.project.outputs.path }}" \
+            -scheme "ThreeOneOSFive" \
             -configuration Release \
             -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "$GITHUB_WORKSPACE/build" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            CURRENT_PROJECT_VERSION=6 \
-            MARKETING_VERSION=1.0.6 \
-            INFOPLIST_KEY_CFBundleDisplayName="MASH PRO" \
+            MARKETING_VERSION="1.1.5" \
+            CURRENT_PROJECT_VERSION="8" \
             clean build
 
-      - name: Find and verify built app
+      # ─────────────────────────────
+      # 6. หาไฟล์ .app
+      # ─────────────────────────────
+      - name: Locate built app
+        id: app
         shell: bash
         run: |
-          set -e
+          APP=$(find "$GITHUB_WORKSPACE/build/Build/Products" \
+            -type d \
+            -name "*.app" \
+            | head -n 1)
 
-          APP="$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" -maxdepth 1 -name '*.app' -print -quit)"
           if [ -z "$APP" ]; then
-            echo "❌ ไม่พบไฟล์ .app หลัง Build"
+            echo "❌ Built .app not found"
             exit 1
           fi
 
-          echo "APP=$APP" >> "$GITHUB_ENV"
-          echo "✅ APP: $APP"
-          echo '--- built Info.plist ---'
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP/Info.plist"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist"
+          echo "Found app:"
+          echo "$APP"
 
-      - name: Prepare and sign for GBox
+          echo "path=$APP" >> "$GITHUB_OUTPUT"
+
+      # ─────────────────────────────
+      # 7. สร้าง Payload
+      # ─────────────────────────────
+      - name: Create IPA Payload
         shell: bash
         run: |
-          set -e
-          xattr -cr "$APP"
+          rm -rf "$GITHUB_WORKSPACE/ipa"
+          mkdir -p "$GITHUB_WORKSPACE/ipa/Payload"
 
-          find "$APP" \
-            \( -name '*.framework' -o -name '*.dylib' -o -name '*.appex' \) \
-            -print0 | while IFS= read -r -d '' ITEM; do
-              /usr/bin/codesign --force --sign - --timestamp=none "$ITEM"
-            done
+          cp -R \
+            "${{ steps.app.outputs.path }}" \
+            "$GITHUB_WORKSPACE/ipa/Payload/"
 
-          /usr/bin/codesign --force --deep --sign - --timestamp=none "$APP"
-          /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
-
-      - name: Create IPA
+      # ─────────────────────────────
+      # 8. Package เป็น IPA
+      # ─────────────────────────────
+      - name: Package unsigned IPA
         shell: bash
         run: |
-          set -e
-          rm -rf "$RUNNER_TEMP/Payload"
-          mkdir -p "$RUNNER_TEMP/Payload"
-          cp -R "$APP" "$RUNNER_TEMP/Payload/"
+          cd "$GITHUB_WORKSPACE/ipa"
 
-          cd "$RUNNER_TEMP"
-          zip -qry "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6_APPID_MASHPRO.ipa" Payload
-          ls -lh "$GITHUB_WORKSPACE/MASH_PRO_V1.0.6_BUILD6_APPID_MASHPRO.ipa"
+          zip -qry \
+            "$GITHUB_WORKSPACE/HTVINTEX-1.1.5-Build8-Unsigned.ipa" \
+            Payload
 
-      - name: Upload IPA
+          echo "✅ IPA created"
+          ls -lh "$GITHUB_WORKSPACE/HTVINTEX-1.1.5-Build8-Unsigned.ipa"
+
+      # ─────────────────────────────
+      # 9. แสดงข้อมูล Version
+      # ─────────────────────────────
+      - name: Verify IPA version
+        shell: bash
+        run: |
+          APP_PLIST=$(find "$GITHUB_WORKSPACE/ipa/Payload" \
+            -path "*.app/Info.plist" \
+            | head -n 1)
+
+          echo "App Info:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleDisplayName" \
+            "$APP_PLIST" || true
+
+          echo -n "Version: "
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleShortVersionString" \
+            "$APP_PLIST"
+
+          echo -n "Build: "
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleVersion" \
+            "$APP_PLIST"
+
+      # ─────────────────────────────
+      # 10. Upload IPA ให้โหลดใน Actions
+      # ─────────────────────────────
+      - name: Upload HTVINTEX IPA
         uses: actions/upload-artifact@v4
         with:
-          name: MASH-PRO-V1.0.6-BUILD6-APPID-MASHPRO
-          path: MASH_PRO_V1.0.6_BUILD6_APPID_MASHPRO.ipa
+          name: HTVINTEX-1.1.5-Build8-Unsigned
+          path: HTVINTEX-1.1.5-Build8-Unsigned.ipa
           if-no-files-found: error
           retention-days: 30
