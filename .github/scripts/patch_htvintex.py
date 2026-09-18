@@ -31,6 +31,25 @@ s = s.replace(
 )
 write(rel, s)
 
+# HTVINTEX re-arm automatic exploit after foreground loss
+rel = "ThreeOneOSFive/App.swift"
+s = read(rel)
+old = """            } else if exploitStatus.isSuccess {
+                exploitStatus = .notStarted
+                log("app: sandbox access is no longer active")
+            }"""
+new = """            } else if exploitStatus.isSuccess {
+                // Returning from Free Fire can drop the sandbox escape while the
+                // app still remembers that it already tried once. Reset that
+                // one-shot guard so detectSupport() can automatically re-run it.
+                autoRunAttempted = false
+                exploitStatus = .notStarted
+                log("app: sandbox access is no longer active; re-arming automatic exploit")
+            }"""
+if old in s:
+    s = s.replace(old, new, 1)
+write(rel, s)
+
 # Home-only production navigation; hidden routes stay in source
 rel = "ThreeOneOSFive/helpers/AppTabNavigationState.swift"
 s = read(rel)
@@ -280,6 +299,21 @@ s = s.replace(
     '.navigationTitle(screenTitle ?? language.text("tab.installed"))\n            .navigationBarTitleDisplayMode(.inline)\n            .toolbar(.hidden, for: .tabBar)',
     1
 )
+
+# HTVINTEX present patch-row errors
+alert_anchor = """            .onAppear {
+                reloadWallpaperPackages()"""
+alert_replacement = """            .alert(item: $store.alert) { alert in
+                Alert(
+                    title: Text(language.text(alert.titleKey)),
+                    message: Text(alert.message(language: language)),
+                    dismissButton: .default(Text(language.text("common.ok")))
+                )
+            }
+            .onAppear {
+                reloadWallpaperPackages()"""
+if alert_anchor in s and ".alert(item: $store.alert)" not in s:
+    s = s.replace(alert_anchor, alert_replacement, 1)
 s = s.replace(
     ".disabled(store.isBusy || isWorking)",
     ".disabled(isWorking)",
@@ -413,6 +447,41 @@ s = s.replace(
                         saveUserDisabledProjectIDs()
                     }"""
 )
+sandbox_wait_marker = "    private func syncActiveStates() {"
+if "private func waitForSandboxRestoreAccess" not in s:
+    helper = """    private func waitForSandboxRestoreAccess(timeout: TimeInterval = 35) throws {
+        guard KernelExploit.requiresSandboxEscape else { return }
+        if KernelExploit.hasSandboxAccess() { return }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if KernelExploit.hasSandboxAccess() { return }
+            Thread.sleep(forTimeInterval: 0.20)
+        }
+
+        throw PatchPackageError.restoreFailed
+    }
+
+"""
+    s = s.replace(sandbox_wait_marker, helper + sandbox_wait_marker, 1)
+
+# Only the OFF path needs to wait for recovered access. Keep ON behavior unchanged.
+toggle_start = s.index("    private func setServerPatchEnabled")
+toggle_end = s.index("    private func syncActiveStates", toggle_start)
+toggle_block = s[toggle_start:toggle_end]
+old = """                } else {
+                    if DevicePatchService.latestReceipt(projectID: item.id) != nil {
+                        try restoreServerPatchFully(projectID: item.id)
+                    }"""
+new = """                } else {
+                    try waitForSandboxRestoreAccess()
+                    if DevicePatchService.latestReceipt(projectID: item.id) != nil {
+                        try restoreServerPatchFully(projectID: item.id)
+                    }"""
+if old in toggle_block:
+    toggle_block = toggle_block.replace(old, new, 1)
+s = s[:toggle_start] + toggle_block + s[toggle_end:]
+
 restore_helper_marker = "    private func syncActiveStates() {"
 if "private func restoreServerPatchFully(projectID: UUID) throws" not in s:
     helper = """    private func restoreServerPatchFully(projectID: UUID) throws {
