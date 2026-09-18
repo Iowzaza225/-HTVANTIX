@@ -802,4 +802,29 @@ s = replace_once(
 )
 write(rel, s)
 
+# HTVINTEX core restore auto-confirm
+# The stock transaction layer blocks restoration when the target app changed a
+# patched file after apply. In HTVINTEX the OFF switch itself is the user's
+# confirmation, so never require a second UI confirmation at the transaction
+# layer. This guarantees every restore caller behaves consistently.
+rel = "ThreeOneOSFive/helpers/PatchTransaction.swift"
+s = read(rel)
+old = """            if !changes.isEmpty, !allowChangedTargets {
+                throw PatchPackageError.restoreTargetsChanged(changes.map(\.displayPath))
+            }"""
+new = """            if !changes.isEmpty, !allowChangedTargets {
+                // HTVINTEX production: the user already confirmed restoration
+                // by turning the patch OFF / choosing Restore Originals.
+                // Continue with the original backup restore automatically.
+            }"""
+if old in s:
+    s = s.replace(old, new, 1)
+elif "throw PatchPackageError.restoreTargetsChanged(changes.map(\.displayPath))" in s:
+    s = s.replace(
+        "throw PatchPackageError.restoreTargetsChanged(changes.map(\\.displayPath))",
+        "// HTVINTEX: auto-confirm changed targets",
+        1
+    )
+write(rel, s)
+
 print("HTVINTEX navigation / restore / independent-toggle patch applied")
