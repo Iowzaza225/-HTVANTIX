@@ -435,6 +435,156 @@ if "func hasSharedLocalBinding(forRemoteID id: String)" not in s:
     )
 write(rel, s)
 
+# HTVINTEX detail restore auto-second-pass
+rel = "ThreeOneOSFive/views/PatchProjectsView.swift"
+s = read(rel)
+
+# Hide the legacy tab bar while viewing an individual patch.
+detail_title = """.navigationTitle(item?.project?.name ?? language.text("patch.title"))
+        .navigationBarTitleDisplayMode(.inline)"""
+detail_title_new = """.navigationTitle(item?.project?.name ?? language.text("patch.title"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)"""
+if detail_title in s and detail_title_new not in s:
+    s = s.replace(detail_title, detail_title_new, 1)
+
+old_prepare = """    private func prepareRestore() {
+        guard let receipt else { return }
+        isWorking = true
+        Task.detached(priority: .userInitiated) {
+            do {
+                let inspection = try DevicePatchService.inspectRestore(receipt: receipt)
+                if inspection.changedTargets.isEmpty {
+                    try DevicePatchService.restore(receipt: receipt)
+                    await MainActor.run {
+                        isWorking = false
+                        actionAlert = PatchStoreAlert(
+                            titleKey: "common.done",
+                            messageKey: "patch.restored_message"
+                        )
+                    }
+                } else {
+                    await MainActor.run {
+                        isWorking = false
+                        restoreChangedPaths = inspection.changedTargets.map(\.displayPath)
+                        showChangedRestoreConfirmation = true
+                    }
+                }
+            } catch let error as PatchPackageError {
+                await MainActor.run {
+                    isWorking = false
+                    actionAlert = PatchStoreAlert(
+                        titleKey: "common.failed",
+                        messageKey: privateErrorKey(for: error),
+                        messageArgument: privateErrorArgument(for: error)
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    isWorking = false
+                    actionAlert = PatchStoreAlert(
+                        titleKey: "common.failed",
+                        messageKey: "patch.error.restore"
+                    )
+                }
+            }
+        }
+    }
+
+    private func restore(allowChangedTargets: Bool) {
+        guard let receipt else { return }
+        isWorking = true
+        Task.detached(priority: .userInitiated) {
+            do {
+                try DevicePatchService.restore(
+                    receipt: receipt,
+                    allowChangedTargets: allowChangedTargets
+                )
+                await MainActor.run {
+                    isWorking = false
+                    actionAlert = PatchStoreAlert(titleKey: "common.done", messageKey: "patch.restored_message")
+                }
+            } catch let error as PatchPackageError {
+                await MainActor.run {
+                    isWorking = false
+                    actionAlert = PatchStoreAlert(
+                        titleKey: "common.failed",
+                        messageKey: privateErrorKey(for: error),
+                        messageArgument: privateErrorArgument(for: error)
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    isWorking = false
+                    actionAlert = PatchStoreAlert(titleKey: "common.failed", messageKey: "patch.error.restore")
+                }
+            }
+        }
+    }"""
+
+new_prepare = """    private func prepareRestore() {
+        // The user already confirmed Restore Originals in the first dialog.
+        // This build does not ask for a second confirmation when the first
+        // restore pass detects changed targets; it completes the required
+        // second restore pass automatically.
+        restore(allowChangedTargets: true)
+    }
+
+    private func restore(allowChangedTargets: Bool) {
+        guard DevicePatchService.latestReceipt(projectID: projectID) != nil else { return }
+        isWorking = true
+        Task.detached(priority: .userInitiated) {
+            do {
+                var attempts = 0
+                while attempts < 2,
+                      let activeReceipt = DevicePatchService.latestReceipt(projectID: projectID) {
+                    try DevicePatchService.restore(
+                        receipt: activeReceipt,
+                        allowChangedTargets: allowChangedTargets
+                    )
+                    attempts += 1
+                }
+
+                guard DevicePatchService.latestReceipt(projectID: projectID) == nil else {
+                    throw PatchPackageError.restoreFailed
+                }
+
+                await MainActor.run {
+                    store.reload()
+                    isWorking = false
+                    actionAlert = PatchStoreAlert(
+                        titleKey: "common.done",
+                        messageKey: "patch.restored_message"
+                    )
+                }
+            } catch let error as PatchPackageError {
+                await MainActor.run {
+                    isWorking = false
+                    actionAlert = PatchStoreAlert(
+                        titleKey: "common.failed",
+                        messageKey: privateErrorKey(for: error),
+                        messageArgument: privateErrorArgument(for: error)
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    isWorking = false
+                    actionAlert = PatchStoreAlert(
+                        titleKey: "common.failed",
+                        messageKey: "patch.error.restore"
+                    )
+                }
+            }
+        }
+    }"""
+
+if old_prepare in s:
+    s = s.replace(old_prepare, new_prepare, 1)
+elif "while attempts < 2," not in s[s.index("private struct PatchProjectDetailView"):]:
+    raise RuntimeError("Detail restore functions not found")
+
+write(rel, s)
+
 # Server download gets a unique stable local package ID
 rel = "ThreeOneOSFive/helpers/PatchProjectStore.swift"
 s = read(rel)
