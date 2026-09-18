@@ -146,9 +146,7 @@ jobs:
             exit 1
           fi
 
-          sed -i '' '0,/Section("License") {/s//Section {/' "$SETTINGS"
-
-          python3 -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]); s=p.read_text(encoding="utf-8"); old="                } footer: {\\n                    Text(\\\"เมื่อออกจาก License แอปจะกลับไปที่หน้ากรอกคีย์\\\")"; new="                } header: {\\n                    Text(\\\"License\\\")\\n                } footer: {\\n                    Text(\\\"เมื่อออกจาก License แอปจะกลับไปที่หน้ากรอกคีย์\\\")"; s=s.replace(old,new,1); p.write_text(s,encoding="utf-8")' "$SETTINGS"
+          perl -pi -e 's/Section\("License"\) \{/Section {/' "$SETTINGS"
 
           echo "✅ Patched SettingsView.swift"
           grep -n -A28 -B2 'Section {' "$SETTINGS" | head -80 || true
