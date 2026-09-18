@@ -8,85 +8,188 @@ on:
       - main
 
 jobs:
-  build-htvintex:
+  build:
     name: Build HTVINTEX 1.1.5 Build 8
     runs-on: macos-latest
 
     steps:
-      # ==========================================
-      # 1. Checkout Source
-      # ==========================================
+      # =========================================================
+      # 1. Checkout
+      # =========================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ==========================================
-      # 2. Show Xcode / Swift version
-      # ==========================================
-      - name: Show build environment
+      # =========================================================
+      # 2. Environment
+      # =========================================================
+      - name: Show environment
         shell: bash
         run: |
-          echo "=============================="
+          echo "======================================"
           echo "XCODE"
-          echo "=============================="
+          echo "======================================"
           xcodebuild -version
 
           echo ""
-          echo "=============================="
+          echo "======================================"
           echo "SWIFT"
-          echo "=============================="
+          echo "======================================"
           swift --version
 
           echo ""
-          echo "=============================="
-          echo "MACOS"
-          echo "=============================="
-          sw_vers
+          echo "======================================"
+          echo "REPOSITORY FILES"
+          echo "======================================"
+          find "$GITHUB_WORKSPACE" -maxdepth 3 -print | head -300
 
-      # ==========================================
-      # 3. Find Xcode Project
-      # ==========================================
-      - name: Find Xcode project
-        id: project
+      # =========================================================
+      # 3. Prepare source
+      #    - ถ้ามี .xcodeproj อยู่แล้ว ใช้เลย
+      #    - ถ้าไม่มี ให้หา ZIP และแตกก่อน
+      # =========================================================
+      - name: Prepare source
+        id: source
         shell: bash
         run: |
+          set -e
+
+          echo "🔍 Searching for existing Xcode project..."
+
           PROJECT="$(find "$GITHUB_WORKSPACE" \
             -type d \
-            -name "ThreeOneOSFive.xcodeproj" \
+            -name "*.xcodeproj" \
+            -not -path "*/.git/*" \
             | head -n 1)"
 
-          if [ -z "$PROJECT" ]; then
-            echo "❌ ThreeOneOSFive.xcodeproj NOT FOUND"
+          if [ -n "$PROJECT" ]; then
+            echo "✅ Project already extracted:"
+            echo "$PROJECT"
+
+            echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo ""
+          echo "⚠️ No .xcodeproj found."
+          echo "🔍 Searching for source ZIP..."
+
+          ZIP="$(find "$GITHUB_WORKSPACE" \
+            -type f \
+            -iname "*.zip" \
+            -not -path "*/.git/*" \
+            | head -n 1)"
+
+          if [ -z "$ZIP" ]; then
+            echo "❌ No Xcode project and no ZIP file found."
             echo ""
-            echo "Projects found:"
-            find "$GITHUB_WORKSPACE" \
-              -type d \
-              -name "*.xcodeproj" \
-              -print || true
+            echo "Repository contents:"
+            find "$GITHUB_WORKSPACE" -maxdepth 4 -print | head -400
             exit 1
           fi
 
-          echo "✅ PROJECT FOUND"
+          echo "✅ ZIP found:"
+          echo "$ZIP"
+
+          EXTRACT_DIR="$GITHUB_WORKSPACE/HTVINTEX_SOURCE"
+
+          rm -rf "$EXTRACT_DIR"
+          mkdir -p "$EXTRACT_DIR"
+
+          echo ""
+          echo "📦 Extracting source..."
+
+          /usr/bin/ditto \
+            -x \
+            -k \
+            "$ZIP" \
+            "$EXTRACT_DIR"
+
+          echo ""
+          echo "✅ ZIP extracted"
+
+          echo ""
+          echo "🔍 Searching for Xcode project after extraction..."
+
+          PROJECT="$(find "$EXTRACT_DIR" \
+            -type d \
+            -name "*.xcodeproj" \
+            | head -n 1)"
+
+          if [ -z "$PROJECT" ]; then
+            echo "❌ .xcodeproj still not found after extracting ZIP."
+            echo ""
+            echo "Extracted contents:"
+            find "$EXTRACT_DIR" -maxdepth 5 -print | head -500
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ XCODE PROJECT FOUND:"
           echo "$PROJECT"
 
-          echo "path=$PROJECT" >> "$GITHUB_OUTPUT"
+          echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
 
-      # ==========================================
-      # 4. Show targets / configurations
-      # ==========================================
-      - name: Show Xcode project information
+      # =========================================================
+      # 4. Detect target
+      # =========================================================
+      - name: Detect Xcode target
+        id: target
         shell: bash
         run: |
-          echo "=============================="
-          echo "PROJECT INFO"
-          echo "=============================="
+          PROJECT="${{ steps.source.outputs.project }}"
+
+          echo "======================================"
+          echo "XCODE PROJECT INFO"
+          echo "======================================"
 
           xcodebuild \
-            -project "${{ steps.project.outputs.path }}" \
+            -project "$PROJECT" \
             -list
 
-      # ==========================================
-      # 5. Prepare Build Folder
-      # ==========================================
+          echo ""
+          echo "🔍 Detecting target..."
+
+          PROJECT_INFO="$(xcodebuild \
+            -project "$PROJECT" \
+            -list)"
+
+          # ใช้ Target 3105 ก่อน ถ้ามี
+          if echo "$PROJECT_INFO" | grep -Eq '^[[:space:]]+3105[[:space:]]*$'; then
+            TARGET="3105"
+          else
+            # ถ้าไม่มี 3105 เลือก Target แรกอัตโนมัติ
+            TARGET="$(echo "$PROJECT_INFO" | awk '
+              /Targets:/ {
+                found=1
+                next
+              }
+
+              /Build Configurations:/ {
+                found=0
+              }
+
+              found && NF {
+                gsub(/^[ \t]+|[ \t]+$/, "")
+                print
+                exit
+              }
+            ')"
+          fi
+
+          if [ -z "$TARGET" ]; then
+            echo "❌ Could not detect an Xcode target."
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ TARGET:"
+          echo "$TARGET"
+
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+
+      # =========================================================
+      # 5. Prepare build
+      # =========================================================
       - name: Prepare build folders
         shell: bash
         run: |
@@ -97,26 +200,29 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/build/obj"
           mkdir -p "$GITHUB_WORKSPACE/ipa"
 
-          echo "✅ Build folders ready"
-
-      # ==========================================
-      # 6. Build Target 3105
-      # ==========================================
+      # =========================================================
+      # 6. Build
+      # =========================================================
       - name: Build HTVINTEX
         shell: bash
         run: |
           set -o pipefail
 
-          echo "=============================="
-          echo "BUILD HTVINTEX"
+          PROJECT="${{ steps.source.outputs.project }}"
+          TARGET="${{ steps.target.outputs.target }}"
+
+          echo "======================================"
+          echo "HTVINTEX BUILD"
+          echo "======================================"
+          echo "Project: $PROJECT"
+          echo "Target : $TARGET"
           echo "Version: 1.1.5"
-          echo "Build:   8"
-          echo "Target:  3105"
-          echo "=============================="
+          echo "Build  : 8"
+          echo "======================================"
 
           xcodebuild \
-            -project "${{ steps.project.outputs.path }}" \
-            -target "3105" \
+            -project "$PROJECT" \
+            -target "$TARGET" \
             -configuration Release \
             -sdk iphoneos \
             CODE_SIGNING_ALLOWED=NO \
@@ -128,38 +234,30 @@ jobs:
             OBJROOT="$GITHUB_WORKSPACE/build/obj" \
             SYMROOT="$GITHUB_WORKSPACE/build" \
             clean build \
-            | tee "$GITHUB_WORKSPACE/build.log"
+            2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      # ==========================================
-      # 7. Find Built .app
-      # ==========================================
+      # =========================================================
+      # 7. Find .app
+      # =========================================================
       - name: Find built app
         id: app
         shell: bash
         run: |
-          echo "=============================="
-          echo "SEARCHING FOR APP"
-          echo "=============================="
+          echo "🔍 Searching for .app..."
 
-          find "$GITHUB_WORKSPACE/build" \
-            -type d \
-            -name "*.app" \
-            -print || true
-
-          APP="$(find "$GITHUB_WORKSPACE/build/products" \
+          APP="$(find "$GITHUB_WORKSPACE/build" \
             -type d \
             -name "*.app" \
             | head -n 1)"
 
           if [ -z "$APP" ]; then
-            APP="$(find "$GITHUB_WORKSPACE/build" \
-              -type d \
-              -name "*.app" \
-              | head -n 1)"
-          fi
-
-          if [ -z "$APP" ]; then
-            echo "❌ BUILD FAILED: .app not found"
+            echo "❌ Built .app not found."
+            echo ""
+            echo "Build contents:"
+            find "$GITHUB_WORKSPACE/build" \
+              -maxdepth 6 \
+              -print \
+              | head -400
             exit 1
           fi
 
@@ -167,34 +265,29 @@ jobs:
           echo "✅ APP FOUND:"
           echo "$APP"
 
-          echo "path=$APP" >> "$GITHUB_OUTPUT"
+          echo "app=$APP" >> "$GITHUB_OUTPUT"
 
-      # ==========================================
-      # 8. Show Built App Info
-      # ==========================================
-      - name: Verify HTVINTEX app
+      # =========================================================
+      # 8. Verify version
+      # =========================================================
+      - name: Verify app information
         shell: bash
         run: |
-          APP="${{ steps.app.outputs.path }}"
+          APP="${{ steps.app.outputs.app }}"
           PLIST="$APP/Info.plist"
 
           if [ ! -f "$PLIST" ]; then
-            echo "❌ Info.plist not found"
+            echo "❌ Info.plist not found."
             exit 1
           fi
 
-          echo "=============================="
-          echo "HTVINTEX APP INFORMATION"
-          echo "=============================="
+          echo "======================================"
+          echo "HTVINTEX APP INFO"
+          echo "======================================"
 
-          echo -n "Display Name: "
+          echo -n "Name: "
           /usr/libexec/PlistBuddy \
             -c "Print :CFBundleDisplayName" \
-            "$PLIST" || true
-
-          echo -n "Bundle Name: "
-          /usr/libexec/PlistBuddy \
-            -c "Print :CFBundleName" \
             "$PLIST" || true
 
           echo -n "Version: "
@@ -212,40 +305,34 @@ jobs:
             -c "Print :CFBundleIdentifier" \
             "$PLIST" || true
 
-          echo ""
-          echo "=============================="
-
-      # ==========================================
+      # =========================================================
       # 9. Create Payload
-      # ==========================================
+      # =========================================================
       - name: Create IPA Payload
         shell: bash
         run: |
-          APP="${{ steps.app.outputs.path }}"
+          APP="${{ steps.app.outputs.app }}"
 
           rm -rf "$GITHUB_WORKSPACE/ipa"
-          mkdir -p "$GITHUB_WORKSPACE/ipa/Payload"
+
+          mkdir -p \
+            "$GITHUB_WORKSPACE/ipa/Payload"
 
           cp -R \
             "$APP" \
             "$GITHUB_WORKSPACE/ipa/Payload/"
 
-          echo "=============================="
-          echo "PAYLOAD CONTENTS"
-          echo "=============================="
+          echo "✅ Payload created"
 
-          find "$GITHUB_WORKSPACE/ipa/Payload" \
-            -maxdepth 2 \
-            -print
-
-      # ==========================================
-      # 10. Create Unsigned IPA
-      # ==========================================
-      - name: Create HTVINTEX IPA
+      # =========================================================
+      # 10. Create IPA
+      # =========================================================
+      - name: Create unsigned IPA
         id: ipa
         shell: bash
         run: |
           IPA_NAME="HTVINTEX-1.1.5-Build8-${GITHUB_RUN_NUMBER}-Unsigned.ipa"
+
           IPA_PATH="$GITHUB_WORKSPACE/$IPA_NAME"
 
           cd "$GITHUB_WORKSPACE/ipa"
@@ -256,40 +343,33 @@ jobs:
             Payload
 
           if [ ! -f "$IPA_PATH" ]; then
-            echo "❌ IPA creation failed"
+            echo "❌ IPA creation failed."
             exit 1
           fi
 
           echo ""
-          echo "=============================="
-          echo "✅ IPA CREATED"
-          echo "=============================="
-
+          echo "✅ IPA CREATED:"
           ls -lh "$IPA_PATH"
 
           echo "name=$IPA_NAME" >> "$GITHUB_OUTPUT"
           echo "path=$IPA_PATH" >> "$GITHUB_OUTPUT"
 
-      # ==========================================
+      # =========================================================
       # 11. Verify IPA
-      # ==========================================
-      - name: Verify IPA structure
+      # =========================================================
+      - name: Verify IPA
         shell: bash
         run: |
-          echo "=============================="
-          echo "IPA CONTENTS"
-          echo "=============================="
-
           unzip -l \
             "${{ steps.ipa.outputs.path }}" \
             | head -100
 
           echo ""
-          echo "✅ IPA structure verified"
+          echo "✅ IPA verified"
 
-      # ==========================================
+      # =========================================================
       # 12. Upload IPA
-      # ==========================================
+      # =========================================================
       - name: Upload HTVINTEX IPA
         uses: actions/upload-artifact@v4
         with:
@@ -298,14 +378,14 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # ==========================================
-      # 13. Upload Build Log if Build fails
-      # ==========================================
-      - name: Upload build log
+      # =========================================================
+      # 13. Upload error log
+      # =========================================================
+      - name: Upload build log if failed
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVINTEX-Build-Error-Log-${{ github.run_number }}
+          name: HTVINTEX-Build-Log-${{ github.run_number }}
           path: build.log
           if-no-files-found: ignore
           retention-days: 7
