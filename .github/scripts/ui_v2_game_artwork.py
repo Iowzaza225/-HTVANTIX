@@ -1,5 +1,5 @@
 from pathlib import Path
-import base64, json, re, sys, subprocess
+import json, re, shutil, sys
 
 root = Path(sys.argv[1])
 project = root / "ThreeOneOSFive"
@@ -10,25 +10,17 @@ def install_imageset(name: str, source_name: str):
     target = assets / f"{name}.imageset"
     target.mkdir(parents=True, exist_ok=True)
 
-    # Normalize supplied artwork through macOS ImageIO before actool sees it.
-    # This keeps the full icon visible and avoids JPEG decoding issues in the
-    # asset compiler. 256x256 is comfortably above the largest 62pt @3x use.
+    # Copy the verified square artwork byte-for-byte. Do not run it through
+    # sips/ImageIO; that conversion caused the lower half of the icon to render
+    # as a gray placeholder on-device.
     src = repo_assets / source_name
-    dst_name = f"{name}.png"
+    dst_name = f"{name}.jpg"
     dst = target / dst_name
-    subprocess.run(
-        ["/usr/bin/sips", "-s", "format", "png", "-z", "256", "256",
-         str(src), "--out", str(dst)],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    shutil.copyfile(src, dst)
 
     contents = {
         "images": [
             {"filename": dst_name, "idiom": "universal", "scale": "1x"},
-            {"idiom": "universal", "scale": "2x"},
-            {"idiom": "universal", "scale": "3x"},
         ],
         "info": {"author": "xcode", "version": 1},
     }
@@ -56,8 +48,9 @@ struct HTVGameIcon: View {
             .resizable()
             .interpolation(.high)
             .antialiased(true)
-            .scaledToFit()
+            .scaledToFill()
             .frame(width: size, height: size)
+            .clipped()
             .clipShape(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
