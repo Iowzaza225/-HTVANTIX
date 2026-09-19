@@ -179,6 +179,9 @@ jobs:
             python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_restore_stable_import_logic.py" "$PROJECT_DIR"
             echo "✅ Pre-UI stable package import logic restored"
 
+            python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_remote_package_isolation.py" "$PROJECT_DIR"
+            echo "✅ Remote package isolation applied"
+
             python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_game_artwork.py" "$PROJECT_DIR"
             echo "✅ Free Fire artwork installed in UI V2"
           else
