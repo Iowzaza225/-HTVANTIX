@@ -1,5 +1,5 @@
 from pathlib import Path
-import json, re, shutil, sys
+import base64, json, re, shutil, subprocess, sys, tempfile
 
 root = Path(sys.argv[1])
 project = root / "ThreeOneOSFive"
@@ -29,23 +29,57 @@ def install_imageset(name: str, source_name: str):
 install_imageset("FreeFireIcon", "FreeFireIcon.jpg")
 install_imageset("FreeFireMaxIcon", "FreeFireMaxIcon.jpg")
 
+# Free Fire normal has shown a partial/gray decode when compiled through
+# Assets.xcassets on-device. Re-encode that source as PNG and embed the bytes
+# directly in Swift so this one icon bypasses Asset Catalog decoding entirely.
+with tempfile.TemporaryDirectory() as tmpdir:
+    ff_png = Path(tmpdir) / "FreeFireIcon.inline.png"
+    subprocess.run(
+        ["/usr/bin/sips", "-s", "format", "png", "-z", "160", "160",
+         str(repo_assets / "FreeFireIcon.jpg"), "--out", str(ff_png)],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    ff_inline_b64 = base64.b64encode(ff_png.read_bytes()).decode("ascii")
+
 # Shared game artwork view.
 design = project / "views" / "DesignSystem.swift"
 s = design.read_text()
 if "struct HTVGameIcon: View" not in s:
-    insert = r'''
-struct HTVGameIcon: View {
+    if "import UIKit" not in s:
+        s = s.replace("import SwiftUI", "import SwiftUI\nimport UIKit", 1)
+
+    insert = f'''
+private enum HTVGameArtwork {{
+    static let freeFireBase64 = "{ff_inline_b64}"
+}}
+
+struct HTVGameIcon: View {{
     let game: String
     var size: CGFloat = 44
 
-    private var assetName: String {
-        let key = game.lowercased()
-        return key.contains("max") ? "FreeFireMaxIcon" : "FreeFireIcon"
-    }
+    private var isMax: Bool {{
+        game.lowercased().contains("max")
+    }}
 
-    var body: some View {
-        Image(assetName)
-            .resizable()
+    @ViewBuilder
+    private var artwork: some View {{
+        if isMax {{
+            Image("FreeFireMaxIcon")
+                .resizable()
+        }} else if let data = Data(base64Encoded: HTVGameArtwork.freeFireBase64),
+                  let image = UIImage(data: data) {{
+            Image(uiImage: image)
+                .resizable()
+        }} else {{
+            Image("FreeFireIcon")
+                .resizable()
+        }}
+    }}
+
+    var body: some View {{
+        artwork
             .interpolation(.high)
             .antialiased(true)
             .scaledToFill()
@@ -58,8 +92,8 @@ struct HTVGameIcon: View {
             )
             .shadow(color: AppTheme.accent.opacity(0.14), radius: 8, y: 3)
             .accessibilityHidden(true)
-    }
-}
+    }}
+}}
 
 '''
     anchor = "struct AppLogo: View {"
