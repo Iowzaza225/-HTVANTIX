@@ -173,14 +173,17 @@ jobs:
             perl -0pi -e 's/(0x1e\n)\}/$1};/' "$DISPLAY_ID"
             echo "✅ UI V2 syntax hotfix applied"
 
-            python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_download_state_fix.py" "$PROJECT_DIR"
-            echo "✅ UI V2 download-state fix applied"
-
             python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_restore_stable_import_logic.py" "$PROJECT_DIR"
             echo "✅ Pre-UI stable package import logic restored"
 
             python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_remote_package_isolation.py" "$PROJECT_DIR"
             echo "✅ Remote package isolation applied"
+
+            # IMPORTANT: apply download-state diagnostics LAST because
+            # restore_stable_import_logic rewrites refreshServerCatalog().
+            # If this runs earlier, failures are hidden and the UI spins forever.
+            python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_download_state_fix.py" "$PROJECT_DIR"
+            echo "✅ UI V2 download-state diagnostics applied"
 
             python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_game_artwork.py" "$PROJECT_DIR"
             echo "✅ Free Fire artwork installed in UI V2"
