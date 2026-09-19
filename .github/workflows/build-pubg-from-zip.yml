@@ -179,6 +179,12 @@ jobs:
             python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_remote_package_isolation.py" "$PROJECT_DIR"
             echo "✅ Remote package isolation applied"
 
+            # Give every website catalog row its own stable local project UUID.
+            # This prevents multiple uploaded .3105 files with the same embedded
+            # project id from overwriting each other in the local library.
+            python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_remote_unique_package_id.py" "$PROJECT_DIR"
+            echo "✅ Remote package contents isolated per website item"
+
             # IMPORTANT: apply download-state diagnostics LAST because
             # restore_stable_import_logic rewrites refreshServerCatalog().
             # If this runs earlier, failures are hidden and the UI spins forever.
