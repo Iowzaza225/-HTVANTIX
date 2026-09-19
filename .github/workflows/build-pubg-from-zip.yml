@@ -185,6 +185,12 @@ jobs:
             python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_download_state_fix.py" "$PROJECT_DIR"
             echo "✅ UI V2 download-state diagnostics applied"
 
+            # Final state layer: website remote.id is the identity for each row.
+            # This prevents one active local receipt from lighting up every
+            # catalog item that happens to share a legacy local UUID.
+            python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_remote_active_state.py" "$PROJECT_DIR"
+            echo "✅ Remote active state isolated per website ID"
+
             python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_game_artwork.py" "$PROJECT_DIR"
             echo "✅ Free Fire artwork installed in UI V2"
           else
