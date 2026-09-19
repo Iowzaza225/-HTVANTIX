@@ -68,20 +68,24 @@ struct HTVGameIcon: View {{
         if isMax {{
             Image("FreeFireMaxIcon")
                 .resizable()
+                .interpolation(.high)
+                .antialiased(true)
         }} else if let data = Data(base64Encoded: HTVGameArtwork.freeFireBase64),
                   let image = UIImage(data: data) {{
             Image(uiImage: image)
                 .resizable()
+                .interpolation(.high)
+                .antialiased(true)
         }} else {{
             Image("FreeFireIcon")
                 .resizable()
+                .interpolation(.high)
+                .antialiased(true)
         }}
     }}
 
     var body: some View {{
         artwork
-            .interpolation(.high)
-            .antialiased(true)
             .scaledToFill()
             .frame(width: size, height: size)
             .clipped()
