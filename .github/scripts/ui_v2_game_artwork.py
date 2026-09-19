@@ -1,5 +1,5 @@
 from pathlib import Path
-import base64, json, re, shutil, subprocess, sys, tempfile
+import json, re, shutil, sys
 
 root = Path(sys.argv[1])
 project = root / "ThreeOneOSFive"
@@ -14,7 +14,8 @@ def install_imageset(name: str, source_name: str):
     # sips/ImageIO; that conversion caused the lower half of the icon to render
     # as a gray placeholder on-device.
     src = repo_assets / source_name
-    dst_name = f"{name}.jpg"
+    suffix = src.suffix.lower() or ".png"
+    dst_name = f"{name}{suffix}"
     dst = target / dst_name
     shutil.copyfile(src, dst)
 
@@ -26,66 +27,27 @@ def install_imageset(name: str, source_name: str):
     }
     (target / "Contents.json").write_text(json.dumps(contents, indent=2) + "\n")
 
-install_imageset("FreeFireIcon", "FreeFireIcon.jpg")
+install_imageset("FreeFireIcon", "FreeFireIcon.png")
 install_imageset("FreeFireMaxIcon", "FreeFireMaxIcon.jpg")
-
-# Free Fire normal has shown a partial/gray decode when compiled through
-# Assets.xcassets on-device. Re-encode that source as PNG and embed the bytes
-# directly in Swift so this one icon bypasses Asset Catalog decoding entirely.
-with tempfile.TemporaryDirectory() as tmpdir:
-    ff_png = Path(tmpdir) / "FreeFireIcon.inline.png"
-    subprocess.run(
-        ["/usr/bin/sips", "-s", "format", "png", "-z", "160", "160",
-         str(repo_assets / "FreeFireIcon.jpg"), "--out", str(ff_png)],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    ff_inline_b64 = base64.b64encode(ff_png.read_bytes()).decode("ascii")
 
 # Shared game artwork view.
 design = project / "views" / "DesignSystem.swift"
 s = design.read_text()
 if "struct HTVGameIcon: View" not in s:
-    if "import UIKit" not in s:
-        s = s.replace("import SwiftUI", "import SwiftUI\nimport UIKit", 1)
-
-    insert = f'''
-private enum HTVGameArtwork {{
-    static let freeFireBase64 = "{ff_inline_b64}"
-}}
-
-struct HTVGameIcon: View {{
+    insert = r'''
+struct HTVGameIcon: View {
     let game: String
     var size: CGFloat = 44
 
-    private var isMax: Bool {{
-        game.lowercased().contains("max")
-    }}
+    private var assetName: String {
+        game.lowercased().contains("max") ? "FreeFireMaxIcon" : "FreeFireIcon"
+    }
 
-    @ViewBuilder
-    private var artwork: some View {{
-        if isMax {{
-            Image("FreeFireMaxIcon")
-                .resizable()
-                .interpolation(.high)
-                .antialiased(true)
-        }} else if let data = Data(base64Encoded: HTVGameArtwork.freeFireBase64),
-                  let image = UIImage(data: data) {{
-            Image(uiImage: image)
-                .resizable()
-                .interpolation(.high)
-                .antialiased(true)
-        }} else {{
-            Image("FreeFireIcon")
-                .resizable()
-                .interpolation(.high)
-                .antialiased(true)
-        }}
-    }}
-
-    var body: some View {{
-        artwork
+    var body: some View {
+        Image(assetName)
+            .resizable()
+            .interpolation(.high)
+            .antialiased(true)
             .scaledToFill()
             .frame(width: size, height: size)
             .clipped()
@@ -96,8 +58,8 @@ struct HTVGameIcon: View {{
             )
             .shadow(color: AppTheme.accent.opacity(0.14), radius: 8, y: 3)
             .accessibilityHidden(true)
-    }}
-}}
+    }
+}
 
 '''
     anchor = "struct AppLogo: View {"
