@@ -326,7 +326,31 @@ jobs:
           echo "app=$APP" >> "$GITHUB_OUTPUT"
 
       # =========================================================
-      # 8. Verify version
+      # 8. Set final app display name
+      # =========================================================
+      - name: Set app name to HTVINTEX
+        shell: bash
+        run: |
+          set -e
+
+          APP="${{ steps.app.outputs.app }}"
+          PLIST="$APP/Info.plist"
+
+          if [ ! -f "$PLIST" ]; then
+            echo "❌ Info.plist not found."
+            exit 1
+          fi
+
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName HTVINTEX" "$PLIST" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string HTVINTEX" "$PLIST"
+
+          /usr/libexec/PlistBuddy -c "Set :CFBundleName HTVINTEX" "$PLIST" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleName string HTVINTEX" "$PLIST"
+
+          echo "✅ App display name set to HTVINTEX"
+
+      # =========================================================
+      # 9. Verify version
       # =========================================================
       - name: Verify app information
         shell: bash
