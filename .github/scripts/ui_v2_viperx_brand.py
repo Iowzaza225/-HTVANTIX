@@ -115,14 +115,18 @@ if logo_start >= 0:
 
         if logo_end > 0:
             replacement = '''struct AppLogo: View {
+    let size: CGFloat
+
     var body: some View {
         Image("VIPERXBrand")
             .resizable()
             .interpolation(.high)
-            .scaledToFit()
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .scaledToFill()
+            .frame(width: size, height: size)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
                     .stroke(AppTheme.accent.opacity(0.55), lineWidth: 1)
             )
             .shadow(color: AppTheme.accent.opacity(0.28), radius: 14, y: 4)
