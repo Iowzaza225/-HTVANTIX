@@ -54,6 +54,88 @@ s = s.replace('Text("PREMIUM CONTROL")', 'Text("VIPERX CONTROL")')
 write(design, s)
 
 # ------------------------------------------------------------------
+# 1b) Replace the in-app AppLogo artwork too.
+# The home screen / license gate do NOT use the iOS AppIcon directly;
+# they render a separate asset from DesignSystem.AppLogo.
+# Detect that asset name and overwrite it with the VIPERX artwork.
+# ------------------------------------------------------------------
+design_text = read(design)
+logo_start = design_text.find("struct AppLogo: View {")
+if logo_start >= 0:
+    brace = design_text.find("{", logo_start)
+    depth = 0
+    logo_end = -1
+    for idx in range(brace, len(design_text)):
+        ch = design_text[idx]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                logo_end = idx + 1
+                break
+
+    logo_block = design_text[logo_start:logo_end if logo_end > 0 else len(design_text)]
+    asset_match = re.search(r'Image\\(\\s*"([^"]+)"\\s*\\)', logo_block)
+    if not asset_match:
+        asset_match = re.search(r'UIImage\\(named:\\s*"([^"]+)"\\)', logo_block)
+
+    if asset_match:
+        logo_asset = asset_match.group(1)
+        target = project / "Assets.xcassets" / f"{logo_asset}.imageset"
+        target.mkdir(parents=True, exist_ok=True)
+        for old in target.iterdir():
+            if old.is_file():
+                old.unlink()
+        dst = target / "VIPERXBrand.jpg"
+        shutil.copyfile(repo_assets / "VIPERXIcon.jpg", dst)
+        (target / "Contents.json").write_text(json.dumps({
+            "images": [
+                {"filename": "VIPERXBrand.jpg", "idiom": "universal", "scale": "1x"}
+            ],
+            "info": {"author": "xcode", "version": 1}
+        }, indent=2) + "\\n")
+        print(f"VIPERX in-app logo installed into asset: {logo_asset}")
+    else:
+        # Fallback: replace AppLogo with a dedicated VIPERX image view while
+        # preserving the public zero-argument initializer used by the UI.
+        target = project / "Assets.xcassets" / "VIPERXBrand.imageset"
+        target.mkdir(parents=True, exist_ok=True)
+        for old in target.iterdir():
+            if old.is_file():
+                old.unlink()
+        dst = target / "VIPERXBrand.jpg"
+        shutil.copyfile(repo_assets / "VIPERXIcon.jpg", dst)
+        (target / "Contents.json").write_text(json.dumps({
+            "images": [
+                {"filename": "VIPERXBrand.jpg", "idiom": "universal", "scale": "1x"}
+            ],
+            "info": {"author": "xcode", "version": 1}
+        }, indent=2) + "\\n")
+
+        if logo_end > 0:
+            replacement = '''struct AppLogo: View {
+    var body: some View {
+        Image("VIPERXBrand")
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(AppTheme.accent.opacity(0.55), lineWidth: 1)
+            )
+            .shadow(color: AppTheme.accent.opacity(0.28), radius: 14, y: 4)
+    }
+}
+'''
+            design_text = design_text[:logo_start] + replacement + design_text[logo_end:]
+            write(design, design_text)
+            print("VIPERX in-app logo installed with dedicated AppLogo fallback")
+else:
+    raise RuntimeError("AppLogo view not found in DesignSystem.swift")
+
+# ------------------------------------------------------------------
 # 2) Visible brand strings only. Do not touch backend/server IDs.
 # ------------------------------------------------------------------
 for rel in [
