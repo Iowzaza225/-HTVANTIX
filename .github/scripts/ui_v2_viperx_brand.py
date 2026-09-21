@@ -16,36 +16,37 @@ def write(path: Path, s: str):
     path.write_text(s, encoding="utf-8")
 
 # ------------------------------------------------------------------
-# 1) Global black/red theme. Keep success/error semantics intact;
-#    replace the app's cyan/blue accent with VIPERX red.
+# 1) Global black/red theme. Keep the existing dark surfaces and replace
+#    the cyan accent block with VIPERX red.
 # ------------------------------------------------------------------
 design = project / "views" / "DesignSystem.swift"
 s = read(design)
 
 red_expr = 'Color(red: 0.94, green: 0.055, blue: 0.075)'
-dark_expr = 'Color(red: 0.015, green: 0.010, blue: 0.012)'
-surface_expr = 'Color(red: 0.055, green: 0.025, blue: 0.030)'
-border_expr = 'Color(red: 0.36, green: 0.055, blue: 0.070)'
 
-# Replace named AppTheme properties without depending on the original color syntax.
-for name, expr in [
-    ("accent", red_expr),
-    ("pageBackground", dark_expr),
-    ("background", dark_expr),
-    ("cardBackground", surface_expr),
-    ("surface", surface_expr),
-    ("surfaceElevated", 'Color(red: 0.085, green: 0.035, blue: 0.040)'),
-    ("border", border_expr),
-    ("divider", 'Color.white.opacity(0.12)'),
-]:
-    pat = re.compile(rf'(static\s+let\s+{re.escape(name)}\s*=\s*)([^\n]+)')
-    s = pat.sub(lambda m: m.group(1) + expr, s, count=1)
+# AppTheme.accent in the UI V2 source is a multi-line dynamic Color(uiColor:)
+# declaration. Replace the WHOLE declaration; replacing just its first line
+# leaves "uiColor: UIColor { ... }" orphaned and breaks Swift compilation.
+accent_pat = re.compile(
+    r'static\\s+let\\s+accent\\s*=\\s*Color\\(\\s*uiColor:\\s*UIColor\\s*\\{.*?\\}\\s*\\)',
+    re.S,
+)
+s, accent_count = accent_pat.subn('static let accent = ' + red_expr, s, count=1)
+if accent_count == 0:
+    # Fallback for a future one-line AppTheme accent definition.
+    s, accent_count = re.subn(
+        r'static\\s+let\\s+accent\\s*=\\s*[^\\n]+',
+        'static let accent = ' + red_expr,
+        s,
+        count=1,
+    )
+if accent_count == 0:
+    raise RuntimeError("AppTheme.accent declaration not found")
 
-# Replace common hard-coded cyan theme colors in the design system only.
-s = re.sub(r'Color\(red:\s*0\.1[0-9]*,\s*green:\s*0\.[6-9][0-9]*,\s*blue:\s*0\.[7-9][0-9]*\)', red_expr, s)
+# Any explicit cyan/blue design-system accent is also converted to red.
 s = s.replace('Color.cyan', red_expr)
-s = s.replace('.cyan', red_expr)
-s = s.replace('Color.blue', red_expr)
+s = s.replace('.foregroundStyle(.cyan)', '.foregroundStyle(AppTheme.accent)')
+s = s.replace('.tint(.cyan)', '.tint(AppTheme.accent)')
 
 # Brand visible logo text.
 s = s.replace('Text("HTVINTEX")', 'Text("VIPERX")')
@@ -131,6 +132,9 @@ with plist_path.open("wb") as fh:
 src = repo_assets / "VIPERXIcon.jpg"
 appicon = project / "Assets.xcassets" / "AppIcon.appiconset"
 appicon.mkdir(parents=True, exist_ok=True)
+for old in appicon.iterdir():
+    if old.is_file():
+        old.unlink()
 
 sizes = [
     ("iphone", "20x20", "2x", 40),
