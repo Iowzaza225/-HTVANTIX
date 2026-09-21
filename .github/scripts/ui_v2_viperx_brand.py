@@ -28,14 +28,14 @@ red_expr = 'Color(red: 0.94, green: 0.055, blue: 0.075)'
 # declaration. Replace the WHOLE declaration; replacing just its first line
 # leaves "uiColor: UIColor { ... }" orphaned and breaks Swift compilation.
 accent_pat = re.compile(
-    r'static\\s+let\\s+accent\\s*=\\s*Color\\(\\s*uiColor:\\s*UIColor\\s*\\{.*?\\}\\s*\\)',
+    r'static\s+let\s+accent\s*=\s*Color\(\s*uiColor:\s*UIColor\s*\{.*?\}\s*\)',
     re.S,
 )
 s, accent_count = accent_pat.subn('static let accent = ' + red_expr, s, count=1)
 if accent_count == 0:
     # Fallback for a future one-line AppTheme accent definition.
     s, accent_count = re.subn(
-        r'static\\s+let\\s+accent\\s*=\\s*[^\\n]+',
+        r'static\s+let\s+accent\s*=\s*[^\n]+',
         'static let accent = ' + red_expr,
         s,
         count=1,
