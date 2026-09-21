@@ -94,7 +94,7 @@ if logo_start >= 0:
                 {"filename": "VIPERXBrand.jpg", "idiom": "universal", "scale": "1x"}
             ],
             "info": {"author": "xcode", "version": 1}
-        }, indent=2) + "\\n")
+        }, indent=2) + "\n")
         print(f"VIPERX in-app logo installed into asset: {logo_asset}")
     else:
         # Fallback: replace AppLogo with a dedicated VIPERX image view while
@@ -111,7 +111,7 @@ if logo_start >= 0:
                 {"filename": "VIPERXBrand.jpg", "idiom": "universal", "scale": "1x"}
             ],
             "info": {"author": "xcode", "version": 1}
-        }, indent=2) + "\\n")
+        }, indent=2) + "\n")
 
         if logo_end > 0:
             replacement = '''struct AppLogo: View {
