@@ -170,9 +170,9 @@ jobs:
             echo "✅ DisplayIdentity syntax hotfix applied"
           fi
 
-          python3 "$GITHUB_WORKSPACE/.github/scripts/viperx_independent_remote_rows.py" "$PROJECT_DIR"
-          echo "✅ Independent server patch rows fix applied"
-          echo "✅ Building VIPERX with isolated per-file server state"
+          echo "ℹ️ Runtime row fix disabled until source-safe patch is available"
+          echo "✅ Source left intact; avoiding failed text-replacement patch"
+          echo "✅ Building VIPERX source"
       # =========================================================
       # 5. Detect target
       # =========================================================
