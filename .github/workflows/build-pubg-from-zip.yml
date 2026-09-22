@@ -1,5 +1,5 @@
 # Manual rebuild requested 2026-09-18 22:07 +07:00
-name: HTVINTEX 1.1.5 Build 8
+name: VIPERX 1.1.9 Build 57
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    name: Build HTVINTEX 1.1.5 Build 8
+    name: Build VIPERX 1.1.9 Build 57
     runs-on: macos-latest
 
     steps:
@@ -200,9 +200,9 @@ jobs:
             python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_game_artwork.py" "$PROJECT_DIR"
             echo "✅ Free Fire artwork installed in UI V2"
 
-            # VISUAL BRANDING ONLY — do not change app logic.
-            python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_viperx_minimal.py" "$PROJECT_DIR"
-            echo "✅ VIPERX minimal visual branding applied"
+            # Branding only: no patch/import/restore/key logic changes.
+            python3 "$GITHUB_WORKSPACE/.github/scripts/viperx_brand_only.py" "$PROJECT_DIR"
+            echo "✅ VIPERX name + black/red UI + license artwork applied"
           else
             python3 "$GITHUB_WORKSPACE/.github/scripts/patch_htvintex.py" "$PROJECT_DIR"
             echo "✅ Source patch complete"
@@ -280,7 +280,7 @@ jobs:
       # =========================================================
       # 6. Build
       # =========================================================
-      - name: Build HTVINTEX
+      - name: Build VIPERX
         shell: bash
         run: |
           set -o pipefail
@@ -289,12 +289,12 @@ jobs:
           TARGET="${{ steps.target.outputs.target }}"
 
           echo "======================================"
-          echo "HTVINTEX BUILD"
+          echo "VIPERX BUILD"
           echo "======================================"
           echo "Project: $PROJECT"
           echo "Target : $TARGET"
-          echo "Version: 1.1.5"
-          echo "Build  : 8"
+          echo "Version: 1.1.9"
+          echo "Build  : 57"
           echo "======================================"
 
           xcodebuild \
@@ -305,8 +305,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            MARKETING_VERSION="1.1.5" \
-            CURRENT_PROJECT_VERSION="8" \
+            MARKETING_VERSION="1.1.9" \
+            CURRENT_PROJECT_VERSION="57" \
             CONFIGURATION_BUILD_DIR="$GITHUB_WORKSPACE/build/products" \
             OBJROOT="$GITHUB_WORKSPACE/build/obj" \
             SYMROOT="$GITHUB_WORKSPACE/build" \
@@ -366,6 +366,10 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleName VIPERX" "$PLIST" 2>/dev/null \
             || /usr/libexec/PlistBuddy -c "Add :CFBundleName string VIPERX" "$PLIST"
 
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.1.9" "$PLIST" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.1.9" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 57" "$PLIST" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 57" "$PLIST"
           echo "✅ App display name set to VIPERX"
 
       # =========================================================
@@ -383,7 +387,7 @@ jobs:
           fi
 
           echo "======================================"
-          echo "HTVINTEX APP INFO"
+          echo "VIPERX APP INFO"
           echo "======================================"
 
           echo -n "Name: "
@@ -432,7 +436,7 @@ jobs:
         id: ipa
         shell: bash
         run: |
-          IPA_NAME="HTVINTEX-1.1.5-Build8-${GITHUB_RUN_NUMBER}-Unsigned.ipa"
+          IPA_NAME="VIPERX-1.1.9-Build57-${GITHUB_RUN_NUMBER}-Unsigned.ipa"
 
           IPA_PATH="$GITHUB_WORKSPACE/$IPA_NAME"
 
@@ -471,10 +475,10 @@ jobs:
       # =========================================================
       # 12. Upload IPA
       # =========================================================
-      - name: Upload HTVINTEX IPA
+      - name: Upload VIPERX IPA
         uses: actions/upload-artifact@v4
         with:
-          name: HTVINTEX-1.1.5-Build8-${{ github.run_number }}
+          name: VIPERX-1.1.9-Build57-${{ github.run_number }}
           path: ${{ steps.ipa.outputs.path }}
           if-no-files-found: error
           retention-days: 30
@@ -486,7 +490,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: HTVINTEX-Build-Log-${{ github.run_number }}
+          name: VIPERX-Build-Log-${{ github.run_number }}
           path: build.log
           if-no-files-found: ignore
           retention-days: 7
