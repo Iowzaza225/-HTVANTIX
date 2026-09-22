@@ -146,6 +146,10 @@ jobs:
           cat "$PROJECT_DIR/ThreeOneOSFive/helpers/DevicePatchService.swift" || true
           echo "===== ORIGINAL REMOTE ROW ====="
           sed -n '450,590p' "$PROJECT_DIR/ThreeOneOSFive/views/PatchProjectsView.swift" || true
+          echo "===== SERVER SYNC IMPLEMENTATION ====="
+          grep -n -A220 -B60 "serverCatalog.load" "$PROJECT_DIR/ThreeOneOSFive/views/PatchProjectsView.swift" || true
+          grep -n -A180 -B60 "importRemotePackageSilently" "$PROJECT_DIR/ThreeOneOSFive/views/PatchProjectsView.swift" || true
+          grep -R -n -A120 -B40 "func importRemotePackageSilently" "$PROJECT_DIR/ThreeOneOSFive" || true
           echo "===== ORIGINAL DETAIL DECLARATION ====="
           grep -n -A40 -B10 "private struct PatchProjectDetailView" "$PROJECT_DIR/ThreeOneOSFive/views/PatchProjectsView.swift" || true
           echo "===== ORIGINAL DETAIL RESTORE ====="
