@@ -116,7 +116,12 @@ for p in license_files:
         )
 
     if count == 0:
-        raise RuntimeError(f"AppLogo call not found in license view: {p}")
+        marker = s.find("SECURE ACCESS")
+        start = max(0, marker - 5000)
+        end = min(len(s), marker + 9000)
+        print("===== LICENSE VIEW SOURCE:", p, "=====")
+        print(s[start:end])
+        raise RuntimeError(f"License logo expression not matched in: {p}")
 
     write(p, s)
     print("VIPERX license logo patched:", p)
