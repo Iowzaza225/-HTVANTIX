@@ -74,55 +74,13 @@ if not license_files:
 
 for p in license_files:
     s = read(p)
-    old = s
+    if 'Image("HTVLogo")' not in s:
+        raise RuntimeError(f'Image("HTVLogo") not found in license view: {p}')
 
-    # Current UI uses AppLogo(size: ...). Replace that call only on this page.
-    s, count = re.subn(
-        r"AppLogo\s*\(\s*size:\s*([^\)]+)\)",
-        r'''Image("VIPERXLicense")
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFill()
-                    .frame(width: \1, height: \1)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(AppTheme.accent.opacity(0.6), lineWidth: 1)
-                    )
-                    .shadow(color: AppTheme.accent.opacity(0.3), radius: 14, y: 4)''',
-        s,
-        count=1,
-    )
-
-    if count == 0:
-        # Fallback for a zero-argument AppLogo.
-        s, count = re.subn(
-            r"AppLogo\s*\(\s*\)",
-            '''Image("VIPERXLicense")
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFill()
-                    .frame(width: 118, height: 118)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(AppTheme.accent.opacity(0.6), lineWidth: 1)
-                    )
-                    .shadow(color: AppTheme.accent.opacity(0.3), radius: 14, y: 4)''',
-            s,
-            count=1,
-        )
-
-    if count == 0:
-        marker = s.find("SECURE ACCESS")
-        start = max(0, marker - 5000)
-        end = min(len(s), marker + 9000)
-        print("===== LICENSE VIEW SOURCE:", p, "=====")
-        print(s[start:end])
-        raise RuntimeError(f"License logo expression not matched in: {p}")
-
+    # Exact one-line swap only. The existing sizing/corner/shadow modifiers stay unchanged.
+    s = s.replace('Image("HTVLogo")', 'Image("VIPERXLicense")', 1)
+    s = s.replace('Text("License • Secure Session • HTVINTEX")',
+                  'Text("License • Secure Session • VIPERX")', 1)
     write(p, s)
     print("VIPERX license logo patched:", p)
 
