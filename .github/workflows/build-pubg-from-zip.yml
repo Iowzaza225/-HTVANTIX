@@ -150,6 +150,9 @@ jobs:
           grep -n -A220 -B60 "serverCatalog.load" "$PROJECT_DIR/ThreeOneOSFive/views/PatchProjectsView.swift" || true
           grep -n -A180 -B60 "importRemotePackageSilently" "$PROJECT_DIR/ThreeOneOSFive/views/PatchProjectsView.swift" || true
           grep -R -n -A120 -B40 "func importRemotePackageSilently" "$PROJECT_DIR/ThreeOneOSFive" || true
+          echo "===== IMPORT PERSIST OVERLAP LOGIC ====="
+          grep -R -n -A180 -B50 "persistImportedPackage" "$PROJECT_DIR/ThreeOneOSFive/helpers" || true
+          grep -R -n -A120 -B40 -E "overlap|conflict|duplicate.*target|existing.*rule" "$PROJECT_DIR/ThreeOneOSFive/helpers/PatchProjectStore.swift" "$PROJECT_DIR/ThreeOneOSFive/helpers/PatchProjectLibrary.swift" || true
           echo "===== ORIGINAL DETAIL DECLARATION ====="
           grep -n -A40 -B10 "private struct PatchProjectDetailView" "$PROJECT_DIR/ThreeOneOSFive/views/PatchProjectsView.swift" || true
           echo "===== ORIGINAL DETAIL RESTORE ====="
