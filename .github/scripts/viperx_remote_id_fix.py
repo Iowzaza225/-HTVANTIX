@@ -5,21 +5,24 @@ root = Path(sys.argv[1])
 p = root / "ThreeOneOSFive/views/PatchProjectsView.swift"
 s = p.read_text(encoding="utf-8")
 
-repls = [
-("""    struct RemoteItem: Identifiable, Hashable {
+old_struct = """    struct RemoteItem: Identifiable, Hashable {
         let id: String
-        let name: String""",
-"""    struct RemoteItem: Identifiable, Hashable {
+        let name: String"""
+new_struct = """    struct RemoteItem: Identifiable, Hashable {
+        // id is the unique client-side row/binding key.
+        // serverID is the original server package id used only for download.
         let id: String
         let serverID: String
-        let name: String"""),
-("""            .appendingPathComponent("api/v4/packages")
+        let name: String"""
+
+old_url = """.appendingPathComponent("api/v4/packages")
             .appendingPathComponent(item.id)
-            .appendingPathComponent("download")""",
-"""            .appendingPathComponent("api/v4/packages")
+            .appendingPathComponent("download")"""
+new_url = """.appendingPathComponent("api/v4/packages")
             .appendingPathComponent(item.serverID)
-            .appendingPathComponent("download")"""),
-("""        return rawItems.compactMap { object in
+            .appendingPathComponent("download")"""
+
+old_parse = """        return rawItems.compactMap { object in
             let enabled = (object["enabled"] as? Bool) ?? (object["active"] as? Bool) ?? true
             guard enabled else { return nil }
             guard let id = stringValue(object["id"] ?? object["packageId"] ?? object["_id"]),
@@ -32,29 +35,33 @@ repls = [
                 version: stringValue(object["version"]) ?? "1.0",
                 game: stringValue(object["game"]),
                 category: stringValue(object["category"]) ?? "other",
-                fileName: stringValue(object["fileName"] ?? object["filename"]) ?? "\(id).3105",
+                fileName: stringValue(object["fileName"] ?? object["filename"]) ?? "\\(id).3105",
                 sizeBytes: intValue(object["sizeBytes"]),
                 sha256: stringValue(object["sha256"])
             )
-        }""",
-"""        // Preserve the server id for the download endpoint, while each
-        // catalog row gets a unique client identity for local binding.
-        var seen: [String: Int] = [:]
+        }"""
+
+new_parse = """        var seen: [String: Int] = [:]
         return rawItems.compactMap { object in
             let enabled = (object["enabled"] as? Bool) ?? (object["active"] as? Bool) ?? true
             guard enabled else { return nil }
             guard let serverID = stringValue(object["id"] ?? object["packageId"] ?? object["_id"]),
                   !serverID.isEmpty else { return nil }
 
-            let fileName = stringValue(object["fileName"] ?? object["filename"]) ?? "\(serverID).3105"
+            let name = stringValue(object["name"] ?? object["title"]) ?? "Patch"
+            let fileName = stringValue(object["fileName"] ?? object["filename"]) ?? "\\(serverID).3105"
             let occurrence = seen[serverID, default: 0]
             seen[serverID] = occurrence + 1
-            let clientID = occurrence == 0 ? serverID : "\(serverID)#\(occurrence):\(fileName)"
+            // Keep the first key backward-compatible. Duplicate server IDs get
+            // a deterministic independent key so they cannot share local state.
+            let clientID = occurrence == 0
+                ? serverID
+                : "\\(serverID)#\\(occurrence)|\\(fileName)|\\(name)"
 
             return RemoteItem(
                 id: clientID,
                 serverID: serverID,
-                name: stringValue(object["name"] ?? object["title"]) ?? "Patch",
+                name: name,
                 description: stringValue(object["description"]) ?? "",
                 version: stringValue(object["version"]) ?? "1.0",
                 game: stringValue(object["game"]),
@@ -63,13 +70,16 @@ repls = [
                 sizeBytes: intValue(object["sizeBytes"]),
                 sha256: stringValue(object["sha256"])
             )
-        }""")
-]
+        }"""
 
-for old,new in repls:
+for label, old, new in [
+    ("RemoteItem", old_struct, new_struct),
+    ("downloadURL", old_url, new_url),
+    ("parseCatalog", old_parse, new_parse),
+]:
     if old not in s:
-        raise SystemExit("Expected source block not found; refusing partial patch")
-    s=s.replace(old,new,1)
+        raise SystemExit(f"Expected {label} source block not found; refusing partial patch")
+    s = s.replace(old, new, 1)
 
-p.write_text(s,encoding="utf-8")
+p.write_text(s, encoding="utf-8")
 print("Applied VIPERX remote ID isolation fix:", p)
