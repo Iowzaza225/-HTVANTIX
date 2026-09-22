@@ -170,6 +170,10 @@ jobs:
             echo "✅ DisplayIdentity syntax hotfix applied"
           fi
 
+          echo "===== REMOTE CATALOG SOURCE ====="
+          grep -n -A260 -B20 "struct RemoteItem" "$PROJECT_DIR/ThreeOneOSFive/views/PatchProjectsView.swift" || true
+          grep -n -A100 -B20 "func downloadURL" "$PROJECT_DIR/ThreeOneOSFive/views/PatchProjectsView.swift" || true
+          grep -n -A180 -B20 "rawItems" "$PROJECT_DIR/ThreeOneOSFive/views/PatchProjectsView.swift" || true
           python3 "$GITHUB_WORKSPACE/.github/scripts/viperx_remote_id_fix.py" "$PROJECT_DIR"
           echo "✅ Remote ID isolation fix applied"
           echo "✅ Building VIPERX source"
