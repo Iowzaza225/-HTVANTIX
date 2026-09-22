@@ -1,5 +1,5 @@
-# Manual rebuild requested 2026-09-18 22:07 +07:00
-name: VIPERX 1.1.9 Build 57
+# VIPERX 1.1.6 Build 9 — build exact uploaded source
+name: VIPERX 1.1.6 Build 9
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    name: Build VIPERX 1.1.9 Build 57
+    name: Build VIPERX 1.1.6 Build 9
     runs-on: macos-latest
 
     steps:
@@ -154,60 +154,23 @@ jobs:
       # =========================================================
       # 4. Patch HTVINTEX source for production behavior
       # =========================================================
-      - name: Patch HTVINTEX source
+      - name: Prepare VIPERX source
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           PROJECT="${{ steps.source.outputs.project }}"
           PROJECT_DIR="$(dirname "$PROJECT")"
 
-          # UI V2 ZIP is already the finished patched source. Re-running the
-          # legacy patcher would try to patch old UI structures a second time.
-          if [[ "$PROJECT_DIR" == *"HTVINTEX_1.1.5_BUILD8_UI_V2_SOURCE"* ]]; then
-            echo "✅ UI V2 source detected — skipping legacy source patcher"
-
-            # UI V2 source hotfix: the generated DisplayIdentity seed array
-            # missed its trailing semicolon. Fix only this syntax issue.
-            DISPLAY_ID="$PROJECT_DIR/ThreeOneOSFive/helpers/DisplayIdentity.m"
+          # Keep the uploaded source unchanged except for the known missing
+          # semicolon in DisplayIdentity.m that prevents compilation.
+          DISPLAY_ID="$PROJECT_DIR/ThreeOneOSFive/helpers/DisplayIdentity.m"
+          if [ -f "$DISPLAY_ID" ]; then
             perl -0pi -e 's/(0x1e\n)\}/$1};/' "$DISPLAY_ID"
-            echo "✅ UI V2 syntax hotfix applied"
-
-            python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_restore_stable_import_logic.py" "$PROJECT_DIR"
-            echo "✅ Pre-UI stable package import logic restored"
-
-            python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_remote_package_isolation.py" "$PROJECT_DIR"
-            echo "✅ Remote package isolation applied"
-
-            # Give every website catalog row its own stable local project UUID.
-            # This prevents multiple uploaded .3105 files with the same embedded
-            # project id from overwriting each other in the local library.
-            python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_remote_unique_package_id.py" "$PROJECT_DIR"
-            echo "✅ Remote package contents isolated per website item"
-
-            # IMPORTANT: apply download-state diagnostics LAST because
-            # restore_stable_import_logic rewrites refreshServerCatalog().
-            # If this runs earlier, failures are hidden and the UI spins forever.
-            python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_download_state_fix.py" "$PROJECT_DIR"
-            echo "✅ UI V2 download-state diagnostics applied"
-
-            # Final state layer: website remote.id is the identity for each row.
-            # This prevents one active local receipt from lighting up every
-            # catalog item that happens to share a legacy local UUID.
-            python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_remote_active_state.py" "$PROJECT_DIR"
-            echo "✅ Remote active state isolated per website ID"
-
-            python3 "$GITHUB_WORKSPACE/.github/scripts/ui_v2_game_artwork.py" "$PROJECT_DIR"
-            echo "✅ Free Fire artwork installed in UI V2"
-
-            # Branding only: no patch/import/restore/key logic changes.
-            python3 "$GITHUB_WORKSPACE/.github/scripts/viperx_brand_only.py" "$PROJECT_DIR"
-            echo "✅ VIPERX name + black/red UI + license artwork applied"
-          else
-            python3 "$GITHUB_WORKSPACE/.github/scripts/patch_htvintex.py" "$PROJECT_DIR"
-            echo "✅ Source patch complete"
+            echo "✅ DisplayIdentity syntax hotfix applied"
           fi
 
+          echo "✅ Building the uploaded VIPERX source without feature patches"
       # =========================================================
       # 5. Detect target
       # =========================================================
@@ -293,8 +256,8 @@ jobs:
           echo "======================================"
           echo "Project: $PROJECT"
           echo "Target : $TARGET"
-          echo "Version: 1.1.9"
-          echo "Build  : 57"
+          echo "Version: 1.1.6"
+          echo "Build  : 9"
           echo "======================================"
 
           xcodebuild \
@@ -305,8 +268,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            MARKETING_VERSION="1.1.9" \
-            CURRENT_PROJECT_VERSION="57" \
+            MARKETING_VERSION="1.1.6" \
+            CURRENT_PROJECT_VERSION="9" \
             CONFIGURATION_BUILD_DIR="$GITHUB_WORKSPACE/build/products" \
             OBJROOT="$GITHUB_WORKSPACE/build/obj" \
             SYMROOT="$GITHUB_WORKSPACE/build" \
@@ -366,10 +329,10 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleName VIPERX" "$PLIST" 2>/dev/null \
             || /usr/libexec/PlistBuddy -c "Add :CFBundleName string VIPERX" "$PLIST"
 
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.1.9" "$PLIST" 2>/dev/null \
-            || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.1.9" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 57" "$PLIST" 2>/dev/null \
-            || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 57" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.1.6" "$PLIST" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.1.6" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 9" "$PLIST" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 9" "$PLIST"
           echo "✅ App display name set to VIPERX"
 
       # =========================================================
@@ -436,7 +399,7 @@ jobs:
         id: ipa
         shell: bash
         run: |
-          IPA_NAME="VIPERX-1.1.9-Build57-${GITHUB_RUN_NUMBER}-Unsigned.ipa"
+          IPA_NAME="VIPERX-1.1.6-Build9-${GITHUB_RUN_NUMBER}-Unsigned.ipa"
 
           IPA_PATH="$GITHUB_WORKSPACE/$IPA_NAME"
 
@@ -478,7 +441,7 @@ jobs:
       - name: Upload VIPERX IPA
         uses: actions/upload-artifact@v4
         with:
-          name: VIPERX-1.1.9-Build57-${{ github.run_number }}
+          name: VIPERX-1.1.6-Build9-${{ github.run_number }}
           path: ${{ steps.ipa.outputs.path }}
           if-no-files-found: error
           retention-days: 30
