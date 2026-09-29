@@ -183,6 +183,26 @@ jobs:
           grep -n -A180 -B20 "rawItems" "$PROJECT_DIR/ThreeOneOSFive/views/PatchProjectsView.swift" || true
           python3 "$GITHUB_WORKSPACE/.github/scripts/viperx_remote_id_fix.py" "$PROJECT_DIR"
           echo "✅ Remote ID isolation fix applied"
+
+          # Stock Launcher files are present in the ZIP but are not listed in the
+          # original Xcode project's Compile Sources phase. Embed the two small
+          # view definitions into App.swift at build time so the uploaded source
+          # can compile without rewriting the .xcodeproj inside the ZIP.
+          APP_SWIFT="$PROJECT_DIR/ThreeOneOSFive/App.swift"
+          STOCK_GATE="$PROJECT_DIR/ThreeOneOSFive/views/StockGateView.swift"
+          STOCK_HOME="$PROJECT_DIR/ThreeOneOSFive/views/StockLauncherHomeView.swift"
+
+          if [ -f "$APP_SWIFT" ] && grep -q "StockGateView()" "$APP_SWIFT"; then
+            if ! grep -q "struct StockGateView" "$APP_SWIFT"; then
+              echo "" >> "$APP_SWIFT"
+              echo "// MARK: - Stock Launcher build integration" >> "$APP_SWIFT"
+              [ -f "$STOCK_GATE" ] && cat "$STOCK_GATE" >> "$APP_SWIFT"
+              echo "" >> "$APP_SWIFT"
+              [ -f "$STOCK_HOME" ] && cat "$STOCK_HOME" >> "$APP_SWIFT"
+              echo "✅ Stock Launcher views embedded into App.swift for this build"
+            fi
+          fi
+
           echo "✅ Building VIPERX source"
       # =========================================================
       # 5. Detect target
