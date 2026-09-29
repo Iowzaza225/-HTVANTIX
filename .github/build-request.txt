@@ -1,0 +1,1 @@
+Build the current VIPERX_STOCK_LAUNCHER_FULL_WIRED_V1.zip using the existing GitHub Actions macOS workflow.
