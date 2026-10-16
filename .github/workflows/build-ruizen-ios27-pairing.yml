@@ -108,6 +108,18 @@ jobs:
             perl -0pi -e 's/(0x1e\n)\}/$1};/' "$DISPLAY_ID"
           fi
 
+          # Swift's generated bridging PCH must import the C FFI declarations.
+          # OTHER_CFLAGS does not reliably reach Swift's bridging-header preprocessing.
+          python3 - <<'PY'
+          from pathlib import Path
+          bridge = Path("source/HTVINTEX_1.1.5_BUILD8_UI_V2_SOURCE/ThreeOneOSFive/ThreeOneOSFive-Bridging-Header.h")
+          value = bridge.read_text()
+          original = '#ifdef RUIZEN_PAIRING_ENABLED\n#import "../pairing-native/include/ruizen_pairing.h"\n#endif'
+          if original not in value:
+              raise SystemExit("Unable to locate RUIZEN Pairing conditional import")
+          bridge.write_text(value.replace(original, '#import "../pairing-native/include/ruizen_pairing.h"'))
+          PY
+
           APP_SWIFT="$PROJECT_ROOT/ThreeOneOSFive/App.swift"
           STOCK_GATE="$PROJECT_ROOT/ThreeOneOSFive/views/StockGateView.swift"
           STOCK_HOME="$PROJECT_ROOT/ThreeOneOSFive/views/StockLauncherHomeView.swift"
