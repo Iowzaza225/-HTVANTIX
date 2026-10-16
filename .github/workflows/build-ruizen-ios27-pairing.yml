@@ -79,6 +79,22 @@ jobs:
               raise SystemExit("Expected Tokio feature declaration was not found")
           manifest.write_text(updated)
           PY
+          # End the mutable RPPairing-file borrow before serializing it.
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("source/HTVINTEX_1.1.5_BUILD8_UI_V2_SOURCE/pairing-native/src/lib.rs")
+          text = source.read_text()
+          a = "    let handshake = host.accept(&mut file, move |pin| async move {"
+          b = "    let peer = loop {"
+          c = "    };\n    // Never claim success"
+          for marker in (a, b, c):
+              if text.count(marker) != 1:
+                  raise SystemExit(f"Unexpected Rust source around {marker!r}")
+          text = text.replace(a, "    let peer = {\n" + a, 1)
+          text = text.replace(b, "    loop {", 1)
+          text = text.replace(c, "    }\n    };\n    // Never claim success", 1)
+          source.write_text(text)
+          PY
           rustup target add aarch64-apple-ios
           cargo build --manifest-path "$PROJECT_ROOT/pairing-native/Cargo.toml" --release --target aarch64-apple-ios 2>&1 | tee "$GITHUB_WORKSPACE/build-rust.log"
           test -s "$PROJECT_ROOT/pairing-native/target/aarch64-apple-ios/release/libruizen_pairing.a"
