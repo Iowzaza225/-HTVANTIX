@@ -69,8 +69,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Tokio select! requires its optional macros feature.
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path("source/HTVINTEX_1.1.5_BUILD8_UI_V2_SOURCE/pairing-native/Cargo.toml")
+          original = manifest.read_text()
+          updated = original.replace('features = ["rt", "net", "time"]', 'features = ["rt", "net", "time", "macros"]')
+          if original == updated:
+              raise SystemExit("Expected Tokio feature declaration was not found")
+          manifest.write_text(updated)
+          PY
           rustup target add aarch64-apple-ios
-          cargo build --manifest-path "$PROJECT_ROOT/pairing-native/Cargo.toml" --release --target aarch64-apple-ios
+          cargo build --manifest-path "$PROJECT_ROOT/pairing-native/Cargo.toml" --release --target aarch64-apple-ios 2>&1 | tee "$GITHUB_WORKSPACE/build-rust.log"
           test -s "$PROJECT_ROOT/pairing-native/target/aarch64-apple-ios/release/libruizen_pairing.a"
 
       - name: Apply original source compilation hotfixes
@@ -145,6 +155,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: RUIZEN-iOS27-Pairing-Build-Logs
-          path: build.log
+          path: |\n            build.log\n            build-rust.log
           if-no-files-found: ignore
           retention-days: 7
