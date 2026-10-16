@@ -1,0 +1,150 @@
+name: RUIZEN CLIENT iOS27 Pairing unsigned IPA
+
+on:
+  push:
+    branches:
+      - feature/ruizen-ios27-ondevice-pairing
+    paths:
+      - '.github/workflows/build-ruizen-ios27-pairing.yml'
+      - 'pairing-integration/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ruizen:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout the isolated branch
+        uses: actions/checkout@v4
+
+      - name: Verify Xcode and Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          if ! command -v cargo >/dev/null; then
+            echo "Rust is required on the macOS runner"
+            exit 1
+          fi
+          cargo --version
+          rustc --version
+
+      - name: Unpack Build 10 and apply RUIZEN iOS 27 pairing source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s RUIZEN_CLIENT_YELLOW_PURPLE_UI_BUILD10.zip
+          mkdir -p source
+          ditto -x -k RUIZEN_CLIENT_YELLOW_PURPLE_UI_BUILD10.zip source
+          PROJECT_ROOT="$GITHUB_WORKSPACE/source/HTVINTEX_1.1.5_BUILD8_UI_V2_SOURCE"
+          test -d "$PROJECT_ROOT/ThreeOneOSFive.xcodeproj"
+          echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, hashlib, zlib
+          pieces = [Path(f"pairing-integration/patch.part{i:02d}.b64").read_text().strip() for i in range(1, 6)]
+          patch = zlib.decompress(base64.urlsafe_b64decode(''.join(pieces)))
+          digest = hashlib.sha256(patch).hexdigest()
+          expected = '800223b2a4cc43b40020c0ef5c1fdb4522e7493eb3e97b7641f5ba893ee6e973'
+          if digest != expected:
+              raise SystemExit(f'Unexpected pairing source patch SHA256: {digest}')
+          Path('source/HTVINTEX_1.1.5_BUILD8_UI_V2_SOURCE/pairing-source.patch').write_bytes(patch)
+          print('Validated RUIZEN Pairing patch, SHA256:', digest)
+          PY
+
+          cd "$PROJECT_ROOT"
+          mkdir -p pairing-native/src pairing-native/include ThreeOneOSFive/helpers ThreeOneOSFive/views
+          patch -p1 --batch --forward < pairing-source.patch
+          test -f pairing-native/src/lib.rs
+          test -f ThreeOneOSFive/helpers/RuizenPairingController.swift
+          test -f ThreeOneOSFive/views/RuizenPairingView.swift
+          plutil -lint ThreeOneOSFive/Info.plist
+          plutil -lint ThreeOneOSFive.xcodeproj/project.pbxproj
+
+      - name: Build native iOS arm64 pairing static library
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-apple-ios
+          cargo build --manifest-path "$PROJECT_ROOT/pairing-native/Cargo.toml" --release --target aarch64-apple-ios
+          test -s "$PROJECT_ROOT/pairing-native/target/aarch64-apple-ios/release/libruizen_pairing.a"
+
+      - name: Apply original source compilation hotfixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          DISPLAY_ID="$PROJECT_ROOT/ThreeOneOSFive/helpers/DisplayIdentity.m"
+          if [ -f "$DISPLAY_ID" ]; then
+            perl -0pi -e 's/(0x1e\n)\}/$1};/' "$DISPLAY_ID"
+          fi
+
+          APP_SWIFT="$PROJECT_ROOT/ThreeOneOSFive/App.swift"
+          STOCK_GATE="$PROJECT_ROOT/ThreeOneOSFive/views/StockGateView.swift"
+          STOCK_HOME="$PROJECT_ROOT/ThreeOneOSFive/views/StockLauncherHomeView.swift"
+          if [ -f "$APP_SWIFT" ] && grep -q 'StockGateView()' "$APP_SWIFT" && ! grep -q 'struct StockGateView' "$APP_SWIFT"; then
+            echo '' >> "$APP_SWIFT"
+            [ -f "$STOCK_GATE" ] && cat "$STOCK_GATE" >> "$APP_SWIFT"
+            echo '' >> "$APP_SWIFT"
+            [ -f "$STOCK_HOME" ] && cat "$STOCK_HOME" >> "$APP_SWIFT"
+          fi
+
+      - name: Compile RUIZEN CLIENT with native pairing enabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/build/products"
+          LIB="$PROJECT_ROOT/pairing-native/target/aarch64-apple-ios/release/libruizen_pairing.a"
+          xcodebuild \
+            -project "$PROJECT_ROOT/ThreeOneOSFive.xcodeproj" \
+            -target '3105' \
+            -configuration Release \
+            -sdk iphoneos \
+            -arch arm64 \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            OTHER_SWIFT_FLAGS="-D RUIZEN_PAIRING_ENABLED" \
+            OTHER_CFLAGS="-DRUIZEN_PAIRING_ENABLED" \
+            OTHER_LDFLAGS="\$(inherited) $LIB -lc++ -framework Security" \
+            CONFIGURATION_BUILD_DIR="$GITHUB_WORKSPACE/build/products" \
+            OBJROOT="$GITHUB_WORKSPACE/build/obj" \
+            SYMROOT="$GITHUB_WORKSPACE/build" \
+            build 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+
+      - name: Package unsigned IPA and inspect metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find "$GITHUB_WORKSPACE/build/products" -maxdepth 2 -type d -name '*.app' | head -n 1)"
+          test -n "$APP"
+          test -f "$APP/Info.plist"
+          plutil -lint "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName RUIZEN CLIENT' "$APP/Info.plist" || \
+            /usr/libexec/PlistBuddy -c 'Add :CFBundleDisplayName string RUIZEN CLIENT' "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist"
+          mkdir -p "$GITHUB_WORKSPACE/build/ipa/Payload"
+          cp -R "$APP" "$GITHUB_WORKSPACE/build/ipa/Payload/"
+          (cd "$GITHUB_WORKSPACE/build/ipa" && zip -qry "$GITHUB_WORKSPACE/build/RUIZEN-CLIENT-iOS27-Pairing-Unsigned.ipa" Payload)
+          unzip -tq "$GITHUB_WORKSPACE/build/RUIZEN-CLIENT-iOS27-Pairing-Unsigned.ipa"
+          ls -lh "$GITHUB_WORKSPACE/build/RUIZEN-CLIENT-iOS27-Pairing-Unsigned.ipa"
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: RUIZEN-CLIENT-iOS27-Pairing-Unsigned
+          path: build/RUIZEN-CLIENT-iOS27-Pairing-Unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RUIZEN-iOS27-Pairing-Build-Logs
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
