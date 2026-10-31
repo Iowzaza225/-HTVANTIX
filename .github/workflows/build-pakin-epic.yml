@@ -6,7 +6,7 @@ on:
     branches:
       - release/pakin-epic-build19
     paths:
-      - PAKIN_EPIC_BUILD19_APPID_PAKIN_READY.zip
+      - ci/PAKIN_EPIC_PAYLOAD.b64
 
 permissions:
   contents: read
@@ -19,34 +19,30 @@ jobs:
       - name: Checkout PAKIN workspace
         uses: actions/checkout@v4
 
-      - name: Verify PAKIN kit is uploaded
-        run: |
-          set -euo pipefail
-          test -s PAKIN_EPIC_BUILD19_APPID_PAKIN_READY.zip || {
-            echo "::error::Upload PAKIN_EPIC_BUILD19_APPID_PAKIN_READY.zip to this release branch before building"
-            exit 1
-          }
-
-      - name: Extract PAKIN rebrand assets
+      - name: Unpack PAKIN branding assets
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p brand
-          unzip -q -o PAKIN_EPIC_BUILD19_APPID_PAKIN_READY.zip -d brand
+          python3 - <<'PYTHON'
+          import base64, io, pathlib, tarfile
+          kit = pathlib.Path("ci/PAKIN_EPIC_PAYLOAD.b64")
+          raw = base64.b64decode("".join(kit.read_text().split()), validate=True)
+          with tarfile.open(fileobj=io.BytesIO(raw),mode="r:gz") as tf:
+            for entry in tf.getmembers():
+              p=pathlib.PurePosixPath(entry.name)
+              assert entry.isfile() and not p.is_absolute() and ".." not in p.parts
+              dest=pathlib.Path("brand").joinpath(*p.parts)
+              dest.parent.mkdir(parents=True,exist_ok=True)
+              dest.write_bytes(tf.extractfile(entry).read())
+          print("PAKIN kit unpacked")
+          PYTHON
           test -s brand/branding/apply_pakin_brand.py
           test -s brand/branding/PakinLicenseGate.swiftpart
           test -s brand/branding/PAKIN_EPIC_LOGO.jpg
-          test -s brand/branding/PAKIN_EPIC_APPICON_1024.png
           test -s brand/tests/verify_brand.py
-          python3 - <<'PY'
-          import pathlib, zipfile
-          p=pathlib.Path('PAKIN_EPIC_BUILD19_APPID_PAKIN_READY.zip')
-          with zipfile.ZipFile(p) as z:
-            assert z.testzip() is None, 'Corrupted PAKIN kit'
-            for f in z.namelist():
-              pp=pathlib.PurePosixPath(f)
-              assert not pp.is_absolute() and '..' not in pp.parts, 'Unsafe archive path'
-          print('PAKIN brand kit verified')
-          PY
+          sips -s format png -z 1024 1024 brand/branding/PAKIN_EPIC_LOGO.jpg --out brand/branding/PAKIN_EPIC_APPICON_1024.png
+          test -s brand/branding/PAKIN_EPIC_APPICON_1024.png
 
       - name: Checkout pinned RUIZEN Standard Build 17 source
         uses: actions/checkout@v4
