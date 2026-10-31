@@ -1,0 +1,153 @@
+name: KRUSOMSRI Build 19 (unsigned IPA)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - release/krusomsri-build20
+    paths:
+      - ci/PAKIN_EPIC_PAYLOAD.b64
+      - .github/workflows/build-pakin-epic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-pakin:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Checkout PAKIN workspace
+        uses: actions/checkout@v4
+
+      - name: Unpack PAKIN branding assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p brand
+          python3 - <<'PYTHON'
+          import base64, io, pathlib, tarfile
+          kit = pathlib.Path("ci/PAKIN_EPIC_PAYLOAD.b64")
+          raw = base64.b64decode("".join(kit.read_text().split()), validate=True)
+          with tarfile.open(fileobj=io.BytesIO(raw),mode="r:gz") as tf:
+            for entry in tf.getmembers():
+              p=pathlib.PurePosixPath(entry.name)
+              assert entry.isfile() and not p.is_absolute() and ".." not in p.parts
+              dest=pathlib.Path("brand").joinpath(*p.parts)
+              dest.parent.mkdir(parents=True,exist_ok=True)
+              dest.write_bytes(tf.extractfile(entry).read())
+          print("PAKIN kit unpacked")
+          PYTHON
+          test -s brand/branding/apply_pakin_brand.py
+          test -s brand/branding/PakinLicenseGate.swiftpart
+          test -s brand/branding/KRUSOMSRI_LOGO.jpg
+          test -s brand/tests/verify_brand.py
+          sips -s format png -z 1024 1024 brand/branding/KRUSOMSRI_LOGO.jpg --out brand/branding/KRUSOMSRI_APPICON_1024.png
+          test -s brand/branding/KRUSOMSRI_APPICON_1024.png
+
+      - name: Checkout pinned RUIZEN Standard Build 17 source
+        uses: actions/checkout@v4
+        with:
+          repository: Iowzaza225/3105
+          ref: 3f581de26fb66f44ed26af92a96dedf21daa6007
+          path: source
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Prepare iOS source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/extracted
+          unzip -q -o source/RUIZEN_CLIENT_BUILD10.zip -d work/extracted
+          ROOT="$(find "$GITHUB_WORKSPACE/work/extracted" -type d -name ThreeOneOSFive.xcodeproj -print -quit | xargs dirname)"
+          test -d "$ROOT/ThreeOneOSFive.xcodeproj"
+          cp -R source/overlay/. "$ROOT/"
+          echo "ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "PROJECT=$ROOT/ThreeOneOSFive.xcodeproj" >> "$GITHUB_ENV"
+
+      - name: Apply original standard source preparation
+        run: |
+          set -euo pipefail
+          python3 source/ci/apply_branding.py "$ROOT" source/branding/RuizenProfile.jpeg
+          python3 source/ci/apply_catalog_status.py "$ROOT"
+          python3 source/ci/fix_catalog_origin.py "$ROOT"
+
+      - name: Apply KRUSOMSRI branding and license appId=krusomsri
+        run: |
+          set -euo pipefail
+          python3 brand/branding/apply_pakin_brand.py "$ROOT" brand/branding
+          python3 brand/tests/verify_brand.py "$ROOT"
+          xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/App.swift"
+          xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/DesignSystem.swift"
+          xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/SettingsView.swift"
+          xcodebuild -project "$PROJECT" -list
+
+      - name: Build unsigned iPhone app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme 3105 \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "$GITHUB_WORKSPACE/build" \
+            PRODUCT_NAME=PAKIN_EPIC \
+            CURRENT_PROJECT_VERSION=20 \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package and verify unsigned IPA
+        run: |
+          set -euo pipefail
+          APP="$(find "$GITHUB_WORKSPACE/build" -type d -name '*.app' -print -quit)"
+          test -n "$APP"
+          python3 - "$APP" <<'PY'
+          import pathlib, plistlib, sys
+          app=pathlib.Path(sys.argv[1])
+          p=app/'Info.plist'
+          info=plistlib.loads(p.read_bytes())
+          assert info['CFBundleIdentifier']=='com.apple.mobile.MobileHouseArrest', info['CFBundleIdentifier']
+          assert info['CFBundleShortVersionString']=='1.1.6', info.get('CFBundleShortVersionString')
+          info['CFBundleDisplayName']='KRUSOMSRI'
+          info['CFBundleName']='KRUSOMSRI'
+          info['CFBundleVersion']='20'
+          p.write_bytes(plistlib.dumps(info,fmt=plistlib.FMT_BINARY))
+          for f in app.glob('*.lproj/InfoPlist.strings'):
+            try: values=plistlib.loads(f.read_bytes())
+            except Exception: continue
+            for key in ('CFBundleDisplayName','CFBundleName'):
+              if key in values: values[key]='KRUSOMSRI'
+            f.write_bytes(plistlib.dumps(values,fmt=plistlib.FMT_BINARY))
+          assert (app/info['CFBundleExecutable']).is_file()
+          assert list(app.glob('AppIcon*.png')), 'Missing app icon'
+          print('Verified:', info['CFBundleIdentifier'], info['CFBundleVersion'])
+          PY
+          mkdir -p package/Payload
+          cp -R "$APP" package/Payload/
+          (cd package && /usr/bin/zip -qry ../KRUSOMSRI-BUILD19-unsigned.ipa Payload)
+          python3 - <<'PY'
+          import zipfile, plistlib
+          with zipfile.ZipFile('KRUSOMSRI-BUILD19-unsigned.ipa') as z:
+            n=next(s for s in z.namelist() if s.startswith('Payload/') and s.count('/')==2 and s.endswith('/Info.plist'))
+            info=plistlib.loads(z.read(n))
+            assert info['CFBundleDisplayName']=='KRUSOMSRI'
+            assert info['CFBundleIdentifier']=='com.apple.mobile.MobileHouseArrest'
+            assert info['CFBundleVersion']=='20'
+          print('IPA verified')
+          PY
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: KRUSOMSRI-BUILD19-unsigned-IPA
+          path: KRUSOMSRI-BUILD19-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
