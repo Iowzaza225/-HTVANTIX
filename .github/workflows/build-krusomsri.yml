@@ -1,4 +1,4 @@
-name: KRUSOMSRI Build 19 (unsigned IPA)
+name: KRUSOMSRI Build 20 (unsigned IPA)
 
 on:
   workflow_dispatch:
@@ -6,28 +6,28 @@ on:
     branches:
       - release/krusomsri-build20
     paths:
-      - ci/PAKIN_EPIC_PAYLOAD.b64
-      - .github/workflows/build-pakin-epic.yml
+      - ci/KRUSOMSRI_BUILD20_PAYLOAD.b64
+      - .github/workflows/build-krusomsri.yml
 
 permissions:
   contents: read
 
 jobs:
-  build-pakin:
+  build-krusomsri:
     runs-on: macos-15
     timeout-minutes: 40
     steps:
-      - name: Checkout PAKIN workspace
+      - name: Checkout KRUSOMSRI workspace
         uses: actions/checkout@v4
 
-      - name: Unpack PAKIN branding assets
+      - name: Unpack KRUSOMSRI branding assets
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p brand
           python3 - <<'PYTHON'
           import base64, io, pathlib, tarfile
-          kit = pathlib.Path("ci/PAKIN_EPIC_PAYLOAD.b64")
+          kit = pathlib.Path("ci/KRUSOMSRI_BUILD20_PAYLOAD.b64")
           raw = base64.b64decode("".join(kit.read_text().split()), validate=True)
           with tarfile.open(fileobj=io.BytesIO(raw),mode="r:gz") as tf:
             for entry in tf.getmembers():
@@ -36,10 +36,10 @@ jobs:
               dest=pathlib.Path("brand").joinpath(*p.parts)
               dest.parent.mkdir(parents=True,exist_ok=True)
               dest.write_bytes(tf.extractfile(entry).read())
-          print("PAKIN kit unpacked")
+          print("KRUSOMSRI kit unpacked")
           PYTHON
-          test -s brand/branding/apply_pakin_brand.py
-          test -s brand/branding/PakinLicenseGate.swiftpart
+          test -s brand/branding/apply_krusomsri_brand.py
+          test -s brand/branding/KrusomsriLicenseGate.swiftpart
           test -s brand/branding/KRUSOMSRI_LOGO.jpg
           test -s brand/tests/verify_brand.py
           sips -s format png -z 1024 1024 brand/branding/KRUSOMSRI_LOGO.jpg --out brand/branding/KRUSOMSRI_APPICON_1024.png
@@ -81,7 +81,7 @@ jobs:
       - name: Apply KRUSOMSRI branding and license appId=krusomsri
         run: |
           set -euo pipefail
-          python3 brand/branding/apply_pakin_brand.py "$ROOT" brand/branding
+          python3 brand/branding/apply_krusomsri_brand.py "$ROOT" brand/branding
           python3 brand/tests/verify_brand.py "$ROOT"
           xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/App.swift"
           xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/DesignSystem.swift"
@@ -97,7 +97,7 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath "$GITHUB_WORKSPACE/build" \
-            PRODUCT_NAME=PAKIN_EPIC \
+            PRODUCT_NAME=KRUSOMSRI \
             CURRENT_PROJECT_VERSION=20 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -132,10 +132,10 @@ jobs:
           PY
           mkdir -p package/Payload
           cp -R "$APP" package/Payload/
-          (cd package && /usr/bin/zip -qry ../KRUSOMSRI-BUILD19-unsigned.ipa Payload)
+          (cd package && /usr/bin/zip -qry ../KRUSOMSRI-BUILD20-unsigned.ipa Payload)
           python3 - <<'PY'
           import zipfile, plistlib
-          with zipfile.ZipFile('KRUSOMSRI-BUILD19-unsigned.ipa') as z:
+          with zipfile.ZipFile('KRUSOMSRI-BUILD20-unsigned.ipa') as z:
             n=next(s for s in z.namelist() if s.startswith('Payload/') and s.count('/')==2 and s.endswith('/Info.plist'))
             info=plistlib.loads(z.read(n))
             assert info['CFBundleDisplayName']=='KRUSOMSRI'
@@ -147,7 +147,7 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: KRUSOMSRI-BUILD19-unsigned-IPA
-          path: KRUSOMSRI-BUILD19-unsigned.ipa
+          name: KRUSOMSRI-BUILD20-unsigned-IPA
+          path: KRUSOMSRI-BUILD20-unsigned.ipa
           if-no-files-found: error
           retention-days: 30
