@@ -1,10 +1,10 @@
-name: KRUSOMSRI Build 20 (unsigned IPA)
+name: KRUSOMSRI 1.1.10 Build 21 (unsigned IPA)
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - release/krusomsri-build20
+      - release/krusomsri-v1.1.10-build21
     paths:
       - ci/KRUSOMSRI_BUILD20_PAYLOAD.b64
       - .github/workflows/build-krusomsri.yml
@@ -83,6 +83,16 @@ jobs:
           set -euo pipefail
           python3 brand/branding/apply_krusomsri_brand.py "$ROOT" brand/branding
           python3 brand/tests/verify_brand.py "$ROOT"
+          python3 - <<'PYVERSION'
+          import os, pathlib, plistlib
+          info_path = pathlib.Path(os.environ['ROOT']) / 'ThreeOneOSFive/Info.plist'
+          info = plistlib.loads(info_path.read_bytes())
+          assert info.get('CFBundleIdentifier') == 'com.apple.mobile.MobileHouseArrest', info.get('CFBundleIdentifier')
+          info['CFBundleShortVersionString'] = '1.1.10'
+          info['CFBundleVersion'] = '21'
+          info_path.write_bytes(plistlib.dumps(info))
+          print('KRUSOMSRI version configured: 1.1.10 (build 21)')
+          PYVERSION
           xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/App.swift"
           xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/DesignSystem.swift"
           xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/SettingsView.swift"
@@ -98,7 +108,8 @@ jobs:
             -sdk iphoneos \
             -derivedDataPath "$GITHUB_WORKSPACE/build" \
             PRODUCT_NAME=KRUSOMSRI \
-            CURRENT_PROJECT_VERSION=20 \
+            MARKETING_VERSION=1.1.10 \
+            CURRENT_PROJECT_VERSION=21 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -115,10 +126,10 @@ jobs:
           p=app/'Info.plist'
           info=plistlib.loads(p.read_bytes())
           assert info['CFBundleIdentifier']=='com.apple.mobile.MobileHouseArrest', info['CFBundleIdentifier']
-          assert info['CFBundleShortVersionString']=='1.1.6', info.get('CFBundleShortVersionString')
+          assert info['CFBundleShortVersionString']=='1.1.10', info.get('CFBundleShortVersionString')
           info['CFBundleDisplayName']='KRUSOMSRI'
           info['CFBundleName']='KRUSOMSRI'
-          info['CFBundleVersion']='20'
+          info['CFBundleVersion']='21'
           p.write_bytes(plistlib.dumps(info,fmt=plistlib.FMT_BINARY))
           for f in app.glob('*.lproj/InfoPlist.strings'):
             try: values=plistlib.loads(f.read_bytes())
@@ -132,22 +143,23 @@ jobs:
           PY
           mkdir -p package/Payload
           cp -R "$APP" package/Payload/
-          (cd package && /usr/bin/zip -qry ../KRUSOMSRI-BUILD20-unsigned.ipa Payload)
+          (cd package && /usr/bin/zip -qry ../KRUSOMSRI-v1.1.10-BUILD21-unsigned.ipa Payload)
           python3 - <<'PY'
           import zipfile, plistlib
-          with zipfile.ZipFile('KRUSOMSRI-BUILD20-unsigned.ipa') as z:
+          with zipfile.ZipFile('KRUSOMSRI-v1.1.10-BUILD21-unsigned.ipa') as z:
             n=next(s for s in z.namelist() if s.startswith('Payload/') and s.count('/')==2 and s.endswith('/Info.plist'))
             info=plistlib.loads(z.read(n))
             assert info['CFBundleDisplayName']=='KRUSOMSRI'
             assert info['CFBundleIdentifier']=='com.apple.mobile.MobileHouseArrest'
-            assert info['CFBundleVersion']=='20'
+            assert info['CFBundleVersion']=='21'
+            assert info['CFBundleShortVersionString']=='1.1.10'
           print('IPA verified')
           PY
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: KRUSOMSRI-BUILD20-unsigned-IPA
-          path: KRUSOMSRI-BUILD20-unsigned.ipa
+          name: KRUSOMSRI-v1.1.10-BUILD21-unsigned-IPA
+          path: KRUSOMSRI-v1.1.10-BUILD21-unsigned.ipa
           if-no-files-found: error
           retention-days: 30
