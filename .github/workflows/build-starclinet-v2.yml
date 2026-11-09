@@ -1,0 +1,225 @@
+name: STARCLINET Cinematic UI v2 Build 24 (unsigned IPA)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - release/starclinet-ui-v2-build24
+    paths:
+      - ci/starclinet_ui_v2.part3
+      - .github/workflows/build-starclinet-v2.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-starclinet:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Checkout STARCLINET workspace
+        uses: actions/checkout@v4
+
+      - name: Unpack STARCLINET branding assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p brand
+          python3 - <<'PYTHON'
+          import base64, io, pathlib, tarfile
+          kit = pathlib.Path("ci/STARCLINET_BUILD22_PAYLOAD.b64")
+          raw = base64.b64decode("".join(kit.read_text().split()), validate=True)
+          with tarfile.open(fileobj=io.BytesIO(raw),mode="r:gz") as tf:
+            for entry in tf.getmembers():
+              p=pathlib.PurePosixPath(entry.name)
+              assert entry.isfile() and not p.is_absolute() and ".." not in p.parts
+              dest=pathlib.Path("brand").joinpath(*p.parts)
+              dest.parent.mkdir(parents=True,exist_ok=True)
+              dest.write_bytes(tf.extractfile(entry).read())
+          print("STARCLINET kit unpacked")
+          PYTHON
+          test -s brand/branding/apply_starclinet_brand.py
+          test -s brand/branding/StarclinetLicenseGate.swiftpart
+          test -s brand/branding/STARCLINET_LOGO.jpg
+          test -s brand/tests/verify_brand.py
+          sips -s format png -z 1024 1024 brand/branding/STARCLINET_LOGO.jpg --out brand/branding/STARCLINET_APPICON_1024.png
+          test -s brand/branding/STARCLINET_APPICON_1024.png
+
+      - name: Checkout pinned RUIZEN Standard Build 17 source
+        uses: actions/checkout@v4
+        with:
+          repository: Iowzaza225/3105
+          ref: 3f581de26fb66f44ed26af92a96dedf21daa6007
+          path: source
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Prepare iOS source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/extracted
+          unzip -q -o source/RUIZEN_CLIENT_BUILD10.zip -d work/extracted
+          ROOT="$(find "$GITHUB_WORKSPACE/work/extracted" -type d -name ThreeOneOSFive.xcodeproj -print -quit | xargs dirname)"
+          test -d "$ROOT/ThreeOneOSFive.xcodeproj"
+          cp -R source/overlay/. "$ROOT/"
+          echo "ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "PROJECT=$ROOT/ThreeOneOSFive.xcodeproj" >> "$GITHUB_ENV"
+
+      - name: Apply original standard source preparation
+        run: |
+          set -euo pipefail
+          python3 source/ci/apply_branding.py "$ROOT" source/branding/RuizenProfile.jpeg
+          python3 source/ci/apply_catalog_status.py "$ROOT"
+          python3 source/ci/fix_catalog_origin.py "$ROOT"
+
+      - name: Apply STARCLINET branding and license appId=starclinet
+        run: |
+          set -euo pipefail
+          cp "$ROOT/ThreeOneOSFive/App.swift" "$GITHUB_WORKSPACE/pristine-App.swift"
+          python3 brand/branding/apply_starclinet_brand.py "$ROOT" brand/branding
+          python3 - <<'PYART'
+          import json, os, pathlib, shutil
+          art = pathlib.Path(os.environ['ROOT']) / 'ThreeOneOSFive/Assets.xcassets/FreeFireArtwork.imageset'
+          art.mkdir(parents=True, exist_ok=True)
+          src = pathlib.Path('.github/assets/FreeFireIcon.jpg')
+          assert src.is_file(), 'Free Fire art missing from repository'
+          shutil.copy2(src, art / 'FreeFire.jpg')
+          (art / 'Contents.json').write_text(json.dumps({
+              'images': [{'filename': 'FreeFire.jpg', 'idiom': 'universal'}],
+              'info': {'author': 'xcode', 'version': 1}
+          }), encoding='utf-8')
+          PYART
+          python3 brand/tests/verify_brand.py "$ROOT"
+          python3 - <<'PYHOME'
+          import base64, gzip, pathlib
+          p=pathlib.Path("ci/starclinet_home_fix.py.gz.b64")
+          raw=gzip.decompress(base64.b64decode("".join(p.read_text().split()), validate=True))
+          target=pathlib.Path("ci/apply_starclinet_home_fix.py")
+          target.write_bytes(raw)
+          print("Loaded targeted Home-only patch", len(raw), "bytes")
+          PYHOME
+          python3 ci/apply_starclinet_home_fix.py "$ROOT" "$GITHUB_WORKSPACE/pristine-App.swift"
+          python3 - <<'PYVERIFY'
+          import os, pathlib
+          app=pathlib.Path(os.environ["ROOT"])/"ThreeOneOSFive"
+          login=(app/"App.swift").read_text()
+          home=(app/"views/RepositoryHomeView.swift").read_text()
+          assert 'TextField("HTV-XXXX-XXXX-XXXX", text: $keyInput)' in login
+          assert 'GAME SELECT' not in login
+          assert 'StarclinetGameCard' not in login
+          assert login.count('"appId": "starclinet"')==2
+          for marker in ['FreeFireArtwork','FreeFireMaxIcon','StarclinetHomeSilverAmbient','NEW DESIGN','NavigationLink {','gameFilter: game']:
+              assert marker in home, marker
+          print('Home-only UI checks passed; original key screen restored')
+          PYVERIFY
+      - name: Apply STARCLINET cinematic dark-orange redesign
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYV2'
+          import base64, io, pathlib, tarfile
+          parts = [pathlib.Path('ci/starclinet_ui_v2.part'+str(n)).read_text().strip() for n in (1,2,3)]
+          archive = base64.b64decode(''.join(parts),validate=True)
+          with tarfile.open(fileobj=io.BytesIO(archive),mode='r:gz') as tf:
+              for member in tf.getmembers():
+                  path=pathlib.PurePosixPath(member.name)
+                  if not member.isfile() or path.is_absolute() or '..' in path.parts: raise ValueError('Bad tar path')
+                  dst=pathlib.Path(*path.parts)
+                  dst.parent.mkdir(parents=True,exist_ok=True)
+                  dst.write_bytes(tf.extractfile(member).read())
+          print('Unpacked STARCLINET UI v2')
+          PYV2
+          test -s design/RepositoryHomeView.swift
+          test -s design/apply_starclinet_ui_v2.py
+          python3 design/apply_starclinet_ui_v2.py "$ROOT" design
+          xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/RepositoryHomeView.swift"
+          xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/DesignSystem.swift"
+          xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/SettingsView.swift"
+          xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/App.swift"
+          python3 - <<'PYTEST'
+          import os,pathlib
+          root=pathlib.Path(os.environ['ROOT'])/'ThreeOneOSFive'
+          home=(root/'views/RepositoryHomeView.swift').read_text()
+          app=(root/'App.swift').read_text()
+          assert 'StarclinetGameLanding' in home
+          assert home.count('PatchProjectsView(') >= 2
+          assert app.count('"appId": "starclinet"') == 2
+          assert 'GAME ACCESS' in app
+          print('STARCLINET UI v2 built on existing license and patch routes')
+          PYTEST
+          xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/RepositoryHomeView.swift"
+          xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/App.swift"
+          xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/DesignSystem.swift"
+          xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/SettingsView.swift"
+          xcodebuild -project "$PROJECT" -list
+
+      - name: Build unsigned iPhone app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme 3105 \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "$GITHUB_WORKSPACE/build" \
+            PRODUCT_NAME=STARCLINET \
+            MARKETING_VERSION=1.1.11 \
+            CURRENT_PROJECT_VERSION=24 \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package and verify unsigned IPA
+        run: |
+          set -euo pipefail
+          APP="$(find "$GITHUB_WORKSPACE/build" -type d -name '*.app' -print -quit)"
+          test -n "$APP"
+          python3 - "$APP" <<'PY'
+          import pathlib, plistlib, sys
+          app=pathlib.Path(sys.argv[1])
+          p=app/'Info.plist'
+          info=plistlib.loads(p.read_bytes())
+          assert info['CFBundleIdentifier']=='com.apple.mobile.MobileHouseArrest', info['CFBundleIdentifier']
+          assert info['CFBundleShortVersionString']=='1.1.11', info.get('CFBundleShortVersionString')
+          info['CFBundleDisplayName']='STARCLINET'
+          info['CFBundleName']='STARCLINET'
+          info['CFBundleVersion']='24'
+          p.write_bytes(plistlib.dumps(info,fmt=plistlib.FMT_BINARY))
+          for f in app.glob('*.lproj/InfoPlist.strings'):
+            try: values=plistlib.loads(f.read_bytes())
+            except Exception: continue
+            for key in ('CFBundleDisplayName','CFBundleName'):
+              if key in values: values[key]='STARCLINET'
+            f.write_bytes(plistlib.dumps(values,fmt=plistlib.FMT_BINARY))
+          assert (app/info['CFBundleExecutable']).is_file()
+          assert list(app.glob('AppIcon*.png')), 'Missing app icon'
+          print('Verified:', info['CFBundleIdentifier'], info['CFBundleVersion'])
+          PY
+          mkdir -p package/Payload
+          cp -R "$APP" package/Payload/
+          (cd package && /usr/bin/zip -qry ../STARCLINET-UI-V2-BUILD24-unsigned.ipa Payload)
+          python3 - <<'PY'
+          import zipfile, plistlib
+          with zipfile.ZipFile('STARCLINET-UI-V2-BUILD24-unsigned.ipa') as z:
+            n=next(s for s in z.namelist() if s.startswith('Payload/') and s.count('/')==2 and s.endswith('/Info.plist'))
+            info=plistlib.loads(z.read(n))
+            assert info['CFBundleDisplayName']=='STARCLINET'
+            assert info['CFBundleIdentifier']=='com.apple.mobile.MobileHouseArrest'
+            assert info['CFBundleVersion']=='24'
+          print('IPA verified')
+          PY
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: STARCLINET-UI-V2-BUILD24-unsigned-IPA
+          path: STARCLINET-UI-V2-BUILD24-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
