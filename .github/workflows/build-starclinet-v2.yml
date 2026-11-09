@@ -137,7 +137,19 @@ jobs:
           PYV2
           test -s design/RepositoryHomeView.swift
           test -s design/apply_starclinet_ui_v2.py
+          cp "$ROOT/ThreeOneOSFive/views/RepositoryHomeView.swift" "$GITHUB_WORKSPACE/home-pre-v2.swift"
           python3 design/apply_starclinet_ui_v2.py "$ROOT" design
+          python3 - <<'PYRETAIN'
+          import os,pathlib
+          root=pathlib.Path(os.environ['ROOT'])/'ThreeOneOSFive/views/RepositoryHomeView.swift'
+          original=pathlib.Path('home-pre-v2.swift').read_text()
+          marker='struct RepositoryNewView: View {'
+          assert marker in original, 'Cannot locate original supporting repository views'
+          root.write_text(root.read_text()+'\n\n'+original[original.index(marker):])
+          patched=root.read_text()
+          assert 'struct RepositorySearchView: View' in patched
+          print('Preserved original repository list and search views')
+          PYRETAIN
           xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/RepositoryHomeView.swift"
           xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/DesignSystem.swift"
           xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/SettingsView.swift"
