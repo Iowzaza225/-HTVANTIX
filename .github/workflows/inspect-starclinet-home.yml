@@ -1,0 +1,50 @@
+name: STARCLINET Home source inspection
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [release/starclinet-home-build23]
+    paths:
+      - .github/workflows/inspect-starclinet-home.yml
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Iowzaza225/3105
+          ref: 3f581de26fb66f44ed26af92a96dedf21daa6007
+          path: source
+          persist-credentials: false
+      - name: Extract relevant SwiftUI source for accurate Home redesign
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p extracted
+          unzip -q source/RUIZEN_CLIENT_BUILD10.zip -d extracted
+          ROOT="$(find "$GITHUB_WORKSPACE/extracted" -type d -name ThreeOneOSFive.xcodeproj -print -quit | xargs dirname)"
+          test -d "$ROOT/ThreeOneOSFive"
+          cp -R source/overlay/. "$ROOT/"
+          python3 source/ci/apply_branding.py "$ROOT" source/branding/RuizenProfile.jpeg
+          python3 source/ci/apply_catalog_status.py "$ROOT"
+          python3 source/ci/fix_catalog_origin.py "$ROOT"
+          mkdir -p diagnosis/ThreeOneOSFive
+          cp "$ROOT/ThreeOneOSFive/ContentView.swift" diagnosis/ThreeOneOSFive/
+          cp "$ROOT/ThreeOneOSFive/App.swift" diagnosis/ThreeOneOSFive/
+          cp -R "$ROOT/ThreeOneOSFive/views" diagnosis/ThreeOneOSFive/
+          find "$ROOT/ThreeOneOSFive/Assets.xcassets" -maxdepth 3 -type f \( -name '*.json' \) | while read -r file; do
+            rel="${file#"$ROOT/ThreeOneOSFive/"}"
+            mkdir -p "diagnosis/ThreeOneOSFive/$(dirname "$rel")"
+            cp "$file" "diagnosis/ThreeOneOSFive/$rel"
+          done
+          find "$ROOT/ThreeOneOSFive" -iname '*FreeFire*' -o -iname '*Game*' > diagnosis/asset_path_hints.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: STARCLINET-HOME-SOURCE-INSPECTION
+          path: diagnosis/
+          retention-days: 2
