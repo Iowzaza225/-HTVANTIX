@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - release/starclinet-build20
+      - release/starclinet-build22
     paths:
       - ci/STARCLINET_BUILD22_PAYLOAD.b64
       - .github/workflows/build-starclinet.yml
