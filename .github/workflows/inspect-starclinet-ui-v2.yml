@@ -41,6 +41,7 @@ jobs:
                   dest.parent.mkdir(parents=True,exist_ok=True)
                   dest.write_bytes(tf.extractfile(item).read())
           PYBRAND
+          cp brand/branding/STARCLINET_LOGO.jpg brand/branding/STARCLINET_APPICON_1024.png
           python3 brand/branding/apply_starclinet_brand.py "$ROOT" brand/branding
           python3 - <<'PYHOME'
           import pathlib,base64,gzip
