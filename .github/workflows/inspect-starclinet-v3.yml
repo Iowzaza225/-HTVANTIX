@@ -1,0 +1,88 @@
+name: STARCLINET UI v3 inspect source
+on:
+  workflow_dispatch:
+  push:
+    branches: [release/starclinet-ui-v3-build25]
+    paths: [.github/workflows/inspect-starclinet-v3.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Iowzaza225/3105
+          ref: 3f581de26fb66f44ed26af92a96dedf21daa6007
+          path: source
+          persist-credentials: false
+      - name: Reconstruct actual Build 24 SwiftUI sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/extracted brand design snapshot
+          unzip -q source/RUIZEN_CLIENT_BUILD10.zip -d work/extracted
+          ROOT="$(find "$GITHUB_WORKSPACE/work/extracted" -type d -name ThreeOneOSFive.xcodeproj -print -quit | xargs dirname)"
+          test -d "$ROOT/ThreeOneOSFive.xcodeproj"
+          cp -R source/overlay/. "$ROOT/"
+          python3 source/ci/apply_branding.py "$ROOT" source/branding/RuizenProfile.jpeg
+          python3 source/ci/apply_catalog_status.py "$ROOT"
+          python3 source/ci/fix_catalog_origin.py "$ROOT"
+          cp "$ROOT/ThreeOneOSFive/App.swift" pristine-App.swift
+          python3 - <<'PY'
+          import base64,io,pathlib,tarfile
+          raw=base64.b64decode(''.join(pathlib.Path('ci/STARCLINET_BUILD22_PAYLOAD.b64').read_text().split()))
+          with tarfile.open(fileobj=io.BytesIO(raw),mode='r:gz') as tf:
+            for item in tf.getmembers():
+              name=pathlib.PurePosixPath(item.name)
+              assert item.isfile() and not name.is_absolute() and '..' not in name.parts
+              dst=pathlib.Path('brand').joinpath(*name.parts)
+              dst.parent.mkdir(parents=True,exist_ok=True)
+              dst.write_bytes(tf.extractfile(item).read())
+          PY
+          cp brand/branding/STARCLINET_LOGO.jpg brand/branding/STARCLINET_APPICON_1024.png
+          python3 brand/branding/apply_starclinet_brand.py "$ROOT" brand/branding
+          python3 - <<'PY'
+          import base64,gzip,pathlib
+          raw=gzip.decompress(base64.b64decode(''.join(pathlib.Path('ci/starclinet_home_fix.py.gz.b64').read_text().split())))
+          pathlib.Path('home_fix.py').write_bytes(raw)
+          PY
+          python3 home_fix.py "$ROOT" "$GITHUB_WORKSPACE/pristine-App.swift"
+          cp "$ROOT/ThreeOneOSFive/views/RepositoryHomeView.swift" home-pre-v2.swift
+          python3 - <<'PY'
+          import base64,io,pathlib,tarfile
+          raw=base64.b64decode(''.join(pathlib.Path('ci/starclinet_ui_v2.part'+str(n)).read_text().strip() for n in (1,2,3)))
+          with tarfile.open(fileobj=io.BytesIO(raw),mode='r:gz') as tf:
+            for member in tf.getmembers():
+              p=pathlib.PurePosixPath(member.name)
+              assert member.isfile() and not p.is_absolute() and '..' not in p.parts
+              dst=pathlib.Path(*p.parts)
+              dst.parent.mkdir(parents=True,exist_ok=True)
+              dst.write_bytes(tf.extractfile(member).read())
+          PY
+          python3 design/apply_starclinet_ui_v2.py "$ROOT" design
+          python3 - <<'PY'
+          import os,pathlib
+          p=pathlib.Path(os.environ.get('GITHUB_WORKSPACE','.'))/'home-pre-v2.swift'
+          original=p.read_text()
+          current=pathlib.Path('work/extracted')
+          paths=list(current.rglob('RepositoryHomeView.swift'))
+          assert len(paths)==1
+          target=paths[0]
+          marker='struct RepositoryNewView: View {'
+          assert marker in original
+          target.write_text(target.read_text()+'\n\n'+original[original.index(marker):])
+          PY
+          cp "$ROOT/ThreeOneOSFive/App.swift" snapshot/App.swift
+          cp "$ROOT/ThreeOneOSFive/ContentView.swift" snapshot/ContentView.swift
+          cp -R "$ROOT/ThreeOneOSFive/views" snapshot/views
+          cp "$ROOT/ThreeOneOSFive/Info.plist" snapshot/Info.plist
+          cp design/apply_starclinet_ui_v2.py snapshot/apply_starclinet_ui_v2.py
+          find snapshot -type f | sort
+      - uses: actions/upload-artifact@v4
+        with:
+          name: STARCLINET-BUILD24-FULL-SOURCE
+          path: snapshot/
+          retention-days: 3
