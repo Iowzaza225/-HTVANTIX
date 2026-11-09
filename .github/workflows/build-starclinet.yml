@@ -1,12 +1,12 @@
-name: STARCLINET Build 22 (unsigned IPA)
+name: STARCLINET Home UI Fix Build 23 (unsigned IPA)
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - release/starclinet-build22
+      - release/starclinet-home-build23
     paths:
-      - ci/STARCLINET_BUILD22_PAYLOAD.b64
+      - ci/starclinet_home_fix.py.gz.b64
       - .github/workflows/build-starclinet.yml
 
 permissions:
@@ -81,6 +81,7 @@ jobs:
       - name: Apply STARCLINET branding and license appId=starclinet
         run: |
           set -euo pipefail
+          cp "$ROOT/ThreeOneOSFive/App.swift" "$GITHUB_WORKSPACE/pristine-App.swift"
           python3 brand/branding/apply_starclinet_brand.py "$ROOT" brand/branding
           python3 - <<'PYART'
           import json, os, pathlib, shutil
@@ -95,6 +96,29 @@ jobs:
           }), encoding='utf-8')
           PYART
           python3 brand/tests/verify_brand.py "$ROOT"
+          python3 - <<'PYHOME'
+          import base64, gzip, pathlib
+          p=pathlib.Path("ci/starclinet_home_fix.py.gz.b64")
+          raw=gzip.decompress(base64.b64decode("".join(p.read_text().split()), validate=True))
+          target=pathlib.Path("ci/apply_starclinet_home_fix.py")
+          target.write_bytes(raw)
+          print("Loaded targeted Home-only patch", len(raw), "bytes")
+          PYHOME
+          python3 ci/apply_starclinet_home_fix.py "$ROOT" "$GITHUB_WORKSPACE/pristine-App.swift"
+          python3 - <<'PYVERIFY'
+          import os, pathlib
+          app=pathlib.Path(os.environ["ROOT"])/"ThreeOneOSFive"
+          login=(app/"App.swift").read_text()
+          home=(app/"views/RepositoryHomeView.swift").read_text()
+          assert 'TextField("HTV-XXXX-XXXX-XXXX", text: $keyInput)' in login
+          assert 'GAME SELECT' not in login
+          assert 'StarclinetGameCard' not in login
+          assert login.count('"appId": "starclinet"')==2
+          for marker in ['FreeFireArtwork','FreeFireMaxIcon','StarclinetHomeSilverAmbient','NEW DESIGN','NavigationLink {','gameFilter: game']:
+              assert marker in home, marker
+          print('Home-only UI checks passed; original key screen restored')
+          PYVERIFY
+          xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/RepositoryHomeView.swift"
           xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/App.swift"
           xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/DesignSystem.swift"
           xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/SettingsView.swift"
@@ -111,7 +135,7 @@ jobs:
             -derivedDataPath "$GITHUB_WORKSPACE/build" \
             PRODUCT_NAME=STARCLINET \
             MARKETING_VERSION=1.1.11 \
-            CURRENT_PROJECT_VERSION=22 \
+            CURRENT_PROJECT_VERSION=23 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -131,7 +155,7 @@ jobs:
           assert info['CFBundleShortVersionString']=='1.1.11', info.get('CFBundleShortVersionString')
           info['CFBundleDisplayName']='STARCLINET'
           info['CFBundleName']='STARCLINET'
-          info['CFBundleVersion']='22'
+          info['CFBundleVersion']='23'
           p.write_bytes(plistlib.dumps(info,fmt=plistlib.FMT_BINARY))
           for f in app.glob('*.lproj/InfoPlist.strings'):
             try: values=plistlib.loads(f.read_bytes())
@@ -145,22 +169,22 @@ jobs:
           PY
           mkdir -p package/Payload
           cp -R "$APP" package/Payload/
-          (cd package && /usr/bin/zip -qry ../STARCLINET-BUILD22-unsigned.ipa Payload)
+          (cd package && /usr/bin/zip -qry ../STARCLINET-HOME-BUILD23-unsigned.ipa Payload)
           python3 - <<'PY'
           import zipfile, plistlib
-          with zipfile.ZipFile('STARCLINET-BUILD22-unsigned.ipa') as z:
+          with zipfile.ZipFile('STARCLINET-HOME-BUILD23-unsigned.ipa') as z:
             n=next(s for s in z.namelist() if s.startswith('Payload/') and s.count('/')==2 and s.endswith('/Info.plist'))
             info=plistlib.loads(z.read(n))
             assert info['CFBundleDisplayName']=='STARCLINET'
             assert info['CFBundleIdentifier']=='com.apple.mobile.MobileHouseArrest'
-            assert info['CFBundleVersion']=='22'
+            assert info['CFBundleVersion']=='23'
           print('IPA verified')
           PY
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: STARCLINET-BUILD22-unsigned-IPA
-          path: STARCLINET-BUILD22-unsigned.ipa
+          name: STARCLINET-HOME-BUILD23-unsigned-IPA
+          path: STARCLINET-HOME-BUILD23-unsigned.ipa
           if-no-files-found: error
           retention-days: 30
