@@ -1,0 +1,60 @@
+name: STARCLINET UI v2 source snapshot
+on:
+  push:
+    branches: [release/starclinet-ui-v2-build24]
+    paths: [.github/workflows/inspect-starclinet-ui-v2.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Iowzaza225/3105
+          ref: 3f581de26fb66f44ed26af92a96dedf21daa6007
+          path: source
+          persist-credentials: false
+      - name: Reconstruct actual Build 23 SwiftUI layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p original brand snapshot
+          unzip -q source/RUIZEN_CLIENT_BUILD10.zip -d original
+          ROOT="$(find "$GITHUB_WORKSPACE/original" -type d -name ThreeOneOSFive.xcodeproj -print -quit | xargs dirname)"
+          cp -R source/overlay/. "$ROOT/"
+          python3 source/ci/apply_branding.py "$ROOT" source/branding/RuizenProfile.jpeg
+          python3 source/ci/apply_catalog_status.py "$ROOT"
+          python3 source/ci/fix_catalog_origin.py "$ROOT"
+          cp "$ROOT/ThreeOneOSFive/App.swift" "$GITHUB_WORKSPACE/pristine-App.swift"
+          python3 - <<'PYBRAND'
+          import base64,io,tarfile,pathlib
+          raw=base64.b64decode(''.join(pathlib.Path('ci/STARCLINET_BUILD22_PAYLOAD.b64').read_text().split()))
+          with tarfile.open(fileobj=io.BytesIO(raw),mode='r:gz') as tf:
+              for item in tf.getmembers():
+                  name=pathlib.PurePosixPath(item.name)
+                  if not item.isfile() or name.is_absolute() or '..' in name.parts: raise RuntimeError('bad archive')
+                  dest=pathlib.Path('brand').joinpath(*name.parts)
+                  dest.parent.mkdir(parents=True,exist_ok=True)
+                  dest.write_bytes(tf.extractfile(item).read())
+          PYBRAND
+          python3 brand/branding/apply_starclinet_brand.py "$ROOT" brand/branding
+          python3 - <<'PYHOME'
+          import pathlib,base64,gzip
+          raw=gzip.decompress(base64.b64decode(''.join(pathlib.Path('ci/starclinet_home_fix.py.gz.b64').read_text().split())))
+          pathlib.Path('home_fix.py').write_bytes(raw)
+          PYHOME
+          python3 home_fix.py "$ROOT" "$GITHUB_WORKSPACE/pristine-App.swift"
+          cp -R "$ROOT/ThreeOneOSFive/views" snapshot/
+          cp "$ROOT/ThreeOneOSFive/App.swift" snapshot/
+          cp "$ROOT/ThreeOneOSFive/ContentView.swift" snapshot/
+          cp -R "$ROOT/ThreeOneOSFive/Assets.xcassets" snapshot/
+          printf 'Build 23 brand+Home source restored\n' > snapshot/README.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: STARCLINET-BUILD23-POSTBRAND-SOURCE
+          path: snapshot/
+          retention-days: 3
