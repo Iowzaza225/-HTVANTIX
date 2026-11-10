@@ -38,7 +38,7 @@ changes=[
                 .resizable()
                 .scaledToFit()
                 .frame(maxWidth: 174, maxHeight: 48)'''),
-('''gameCard(title: "Free Fire", game: "ff", image: "FreeFireArtwork", count: freeFireCount)''',
+('''gameCard(title: "Free Fire", game: "ff", image: "FreeFireIcon", count: freeFireCount)''',
  '''gameCard(title: "Free Fire", game: "ff", image: "Star28FreeFireBanner", count: freeFireCount)'''),
 ('''gameCard(title: "Free Fire MAX", game: "ffmax", image: "StarclinetFFMaxBanner", count: freeFireMaxCount)''',
  '''gameCard(title: "Free Fire MAX", game: "ffmax", image: "Star28FreeFireMaxBanner", count: freeFireMaxCount)'''),
