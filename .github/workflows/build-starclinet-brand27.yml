@@ -240,44 +240,16 @@ jobs:
           xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/RepositoryHomeView.swift"
           xcrun swiftc -frontend -parse "$ROOT/ThreeOneOSFive/views/SettingsView.swift"
 
-      - name: Retrieve approved STARCLINET artwork and persist sources
+      - name: Use repository-stored STARCLINET artwork
         shell: bash
-        env:
-          STAR_ICON_URL: 'https://media.canva.com/v2/image-resize/format:PNG/height:200/quality:100/uri:ifs%3A%2F%2FM%2Fcb468263-e44e-4665-aacd-56c0c2060c7f/watermark:F/width:200?csig=AAAAAAAAAAAAAAAAAAAAAOkYWs6cKmpdQgTYhpFfmGUoZL5xeF4q-DQXwQZeoiSq&exp=1794297656&osig=AAAAAAAAAAAAAAAAAAAAADSAL4n_8v4YJ5CTCCfC7sywhy6oF3sFILRVakZ-9-ci&signer=media-rpc&token=AAIAAU0AJGNiNDY4MjYzLWU0NGUtNDY2NS1hYWNkLTU2YzBjMjA2MGM3ZgAAAAABocR5csACZ6uXfW06_0wWghOqSMxLP8r7qOeaJp5mtpGXBkiaIQ&x-canva-quality=thumbnail'
-          STAR_WORDMARK_URL: 'https://media.canva.com/v2/image-resize/format:PNG/height:66/quality:100/uri:ifs%3A%2F%2FM%2F27ee1eef-b66e-4a20-b4bb-80911ed24ce2/watermark:F/width:200?csig=AAAAAAAAAAAAAAAAAAAAANDvuauqeS9Ftm4cQDPQFq6UsPTE_bEatWm4mDzmiAJ-&exp=1794299877&osig=AAAAAAAAAAAAAAAAAAAAACO7enf-PsGT4fdQ5Quaf_gfxyjZfKr_nnbtVc5Nsk8d&signer=media-rpc&token=AAIAAU0AJDI3ZWUxZWVmLWI2NmUtNGEyMC1iNGJiLTgwOTExZWQyNGNlMgAAAAABocSbVoj45K61pminpF0omH_qyIfLNs-CtOeDdLFEw0bAoPEonQ&x-canva-quality=thumbnail'
-          STAR_FF_URL: 'https://media.canva.com/v2/image-resize/format:PNG/height:66/quality:100/uri:ifs%3A%2F%2FM%2Fed89bf0c-c691-48b8-a02f-618d6db9df9a/watermark:F/width:200?csig=AAAAAAAAAAAAAAAAAAAAAJ5IUIMhhxAkBKSVtcDTkezHmcTliVNfQqIHMXD1dKK7&exp=1794298995&osig=AAAAAAAAAAAAAAAAAAAAAPC0GJld4ij0HLCNCM6MJ_3-G9HDbbBKTdQwYflwCMue&signer=media-rpc&token=AAIAAU0AJGVkODliZjBjLWM2OTEtNDhiOC1hMDJmLTYxOGQ2ZGI5ZGY5YQAAAAABocSN4ThFVTVrbsUf4qQm-YTFDs3IJupw6JkYtdJkJAIjOBaUjg&x-canva-quality=thumbnail'
-          STAR_MAX_URL: 'https://media.canva.com/v2/image-resize/format:PNG/height:66/quality:100/uri:ifs%3A%2F%2FM%2Fcdaf74e4-6e79-44f3-acb2-7ec64ed42b24/watermark:F/width:200?csig=AAAAAAAAAAAAAAAAAAAAANLx5Zqq7iA_m480PTe_hwDp9LWoJUxrCPpNBwHm0MsQ&exp=1794299631&osig=AAAAAAAAAAAAAAAAAAAAAEDPWfe00iZY0VnM8dhnxlf-vL8HDo_YlbA3Bi5C1XXs&signer=media-rpc&token=AAIAAU0AJGNkYWY3NGU0LTZlNzktNDRmMy1hY2IyLTdlYzY0ZWQ0MmIyNAAAAAABocSXlZgf_V8LHrq1B0KkByj0yULmj9zwwC_zHPJsjvcWlxardw&x-canva-quality=thumbnail'
-          STAR_LOGIN_URL: 'https://media.canva.com/v2/image-resize/format:PNG/height:200/quality:100/uri:ifs%3A%2F%2FM%2F2768512b-1954-4ecb-89fe-e56e4420cb5f/watermark:F/width:112?csig=AAAAAAAAAAAAAAAAAAAAABsabWS3b5TyeCAZ-6KboSdcsBKYSXlngQgy4q29Iell&exp=1794297873&osig=AAAAAAAAAAAAAAAAAAAAAMM_f9_1lpXi9-tP6UCtnEyjiy1MILgHeiyozter00vF&signer=media-rpc&token=AAIAAU0AJDI3Njg1MTJiLTE5NTQtNGVjYi04OWZlLWU1NmU0NDIwY2I1ZgAAAAABocR8wmj8PrC868Hb4SQdLrFicMMN2Y2ubruPWACRUt-nMzkR-A&x-canva-quality=thumbnail'
         run: |
           set -euo pipefail
-          mkdir -p artwork
-          if test -s artwork/StarclinetAppIcon.png && test -s artwork/FreeFireMaxBanner.png; then
-            echo "Using committed artwork assets"
-          else
-            curl --fail --location --retry 3 --silent --show-error "$STAR_ICON_URL" -o artwork/StarclinetAppIconThumb.png
-            curl --fail --location --retry 3 --silent --show-error "$STAR_WORDMARK_URL" -o artwork/StarclinetWordmarkThumb.png
-            curl --fail --location --retry 3 --silent --show-error "$STAR_FF_URL" -o artwork/FreeFireBannerThumb.png
-            curl --fail --location --retry 3 --silent --show-error "$STAR_MAX_URL" -o artwork/FreeFireMaxBannerThumb.png
-            curl --fail --location --retry 3 --silent --show-error "$STAR_LOGIN_URL" -o artwork/StarclinetLoginConceptThumb.png
-            sips -s format png -z 1024 1024 artwork/StarclinetAppIconThumb.png --out artwork/StarclinetAppIcon.png >/dev/null
-            sips -s format png -z 280 840 artwork/StarclinetWordmarkThumb.png --out artwork/StarclinetWordmark.png >/dev/null
-            sips -s format png -z 400 1200 artwork/FreeFireBannerThumb.png --out artwork/FreeFireBanner.png >/dev/null
-            sips -s format png -z 400 1200 artwork/FreeFireMaxBannerThumb.png --out artwork/FreeFireMaxBanner.png >/dev/null
-            sips -s format png -z 1280 720 artwork/StarclinetLoginConceptThumb.png --out artwork/StarclinetLoginConcept.png >/dev/null
-            rm -f artwork/*Thumb.png
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add artwork
-            if ! git diff --cached --quiet; then
-              git commit -m "Store STARCLINET Build 27 user-approved artwork"
-              git push origin "HEAD:release/starclinet-brand-assets-build27" || echo "Artwork persisted in current build; push denied"
-            fi
-          fi
           test -s artwork/StarclinetAppIcon.png
           test -s artwork/StarclinetWordmark.png
           test -s artwork/FreeFireBanner.png
           test -s artwork/FreeFireMaxBanner.png
           test -s artwork/StarclinetLoginConcept.png
+          echo "All 5 STARCLINET graphics are committed in the project"
 
       - name: Apply STARCLINET Build 27 artwork to actual iOS asset catalogs
         shell: bash
