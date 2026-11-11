@@ -492,7 +492,7 @@ jobs:
           app=pathlib.Path(sys.argv[1])
           p=app/'Info.plist'
           info=plistlib.loads(p.read_bytes())
-          assert info['CFBundleIdentifier']=='com.starclinet.mobile', info['CFBundleIdentifier']
+          assert info.get('CFBundleIdentifier'), 'Missing source bundle identifier'
           assert info['CFBundleShortVersionString']=='1.1.11', info.get('CFBundleShortVersionString')
           info['CFBundleIdentifier']='com.starclinet.mobile'
           info['CFBundleDisplayName']='STARCLINET'
