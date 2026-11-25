@@ -1,0 +1,48 @@
+name: VIPERX License App ID source inspection
+
+on:
+  push:
+    branches:
+      - fix/viperx-license-appid-audit
+    paths:
+      - .github/workflows/inspect-viperx-license-appid.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect source ZIP license identifiers safely
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib,zipfile,re
+          zips=sorted(pathlib.Path('.').glob('*.zip'))
+          assert zips, 'No ZIP source file'
+          for zp in zips:
+            print('SOURCE ZIP',zp.name)
+            with zipfile.ZipFile(zp) as z:
+              swift=[n for n in z.namelist() if n.endswith('.swift') and not n.startswith('__MACOSX')]
+              print('Swift files:',len(swift))
+              for n in swift:
+                if not (n.endswith('App.swift') or 'License' in n or 'license' in n): continue
+                lines=z.read(n).decode('utf-8','replace').splitlines()
+                matched=[i for i,l in enumerate(lines) if re.search(r'(?i)(starclinet|viperxmods|appid|license/redeem|prepare.*license|api/v4/license)',l)]
+                if not matched:continue
+                print('SOURCE FILE',n,'matches',len(matched))
+                shown=set()
+                for i in matched[:32]:
+                  for k in range(max(0,i-3),min(len(lines),i+4)):
+                    if k in shown: continue
+                    shown.add(k)
+                    line=lines[k]
+                    if re.search(r'(?i)(password\s*[=:]|secret\s*[=:]|private.?key\s*[=:])',line):
+                      line='[REDACTED]'
+                    print(f'{k+1}: {line[:240]}')
+                  print('---')
+          PY
