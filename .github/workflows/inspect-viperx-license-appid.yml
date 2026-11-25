@@ -6,6 +6,7 @@ on:
       - fix/viperx-license-appid-audit
     paths:
       - .github/workflows/inspect-viperx-license-appid.yml
+      - .github/scripts/fix_viperx_license_appid.py
   workflow_dispatch:
 
 permissions:
@@ -45,4 +46,22 @@ jobs:
                       line='[REDACTED]'
                     print(f'{k+1}: {line[:240]}')
                   print('---')
+          PY
+      - name: Verify targeted repair against source in isolated workspace
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib,zipfile,tempfile,subprocess,sys
+          zp=pathlib.Path('VIPERXMODS_v1.0.18_Build26_Xcode_Source.zip')
+          assert zp.is_file()
+          with tempfile.TemporaryDirectory() as d, zipfile.ZipFile(zp) as z:
+            path=next(n for n in z.namelist() if n.endswith('/App.swift') and 'ThreeOneOSFive/' in n)
+            source=pathlib.Path(d)/'App.swift'
+            source.write_bytes(z.read(path))
+            subprocess.run([sys.executable,'.github/scripts/fix_viperx_license_appid.py',str(source)],check=True)
+            fixed=source.read_text()
+            assert fixed.count('"appId": "viperxmods"')==2
+            assert 'defaults.set("viperxmods", forKey: scopeKey)' in fixed
+            assert 'defaults.set("starclinet", forKey: scopeKey)' not in fixed
+            print('PASS: ZIP source license identity repaired without relaxing authorization')
           PY
